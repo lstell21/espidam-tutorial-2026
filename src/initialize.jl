@@ -1,34 +1,59 @@
 """
-initialize(; network_type, mean_degree = 4, n_nodes = 1000, dispersion = 0.1, patient_zero = :random, high_risk=:random, fraction_high_risk=0.1, trans_prob = 0.1, days_to_recovered = 14, seed = 42, r̂ = nothing, p̂ = nothing, low_risk_factor = 1.0, custom_graph = nothing, edgelist_path = "degs/network")
+    initialize(; network_type, mean_degree, n_nodes, dispersion, patient_zero, high_risk,
+               fraction_high_risk, trans_prob, days_to_recovered, seed, r̂, p̂, low_risk_factor,
+               use_hospitalization, hospitalization_prob, days_to_hospital_recovery,
+               custom_graph, edgelist_path)
 
-Initialize the model with default parameters.
+Initialize the model with specified parameters.
 
 # Arguments
-- `network_type`: The type of network to create. Can be `:random`, `:smallworld`, `:preferentialattachment`, `:configuration`, `:proportionatemixing`, or `:edgelist`.
-- `mean_degree`: The mean degree of the network. For :preferentialattachment, k is used as mean_degree/2 (for even numbers). Default is 4.
-- `n_nodes`: The number of nodes in the network. For :configuration, the number of nodes is fixed to 1000. Default is 1000.
-- `dispersion`: The dispersion parameter for the negative binomial distribution, used only when `network_type` is `:proportionatemixing` and r̂ and p̂ are not provided. Default is 0.1.
-- `patient_zero`: The type of patient zero. Can be `:random`(a random agent), `:maxdegree` (the agent with highest degree_centrality), `:maxbetweenness`, and `:maxeigenvector`.
-- `high_risk`: The distribution of high and low risk agents. Can be `:random` (randomly distributed), `:maxdegree` (based on degree centrality), `:maxbetweenness` (based on betweenness centrality), and `:maxeigenvector` (based on eigenvector centrality).
-- `fraction_high_risk`: The fraction of high risk agents in the network. Default is 0.1.
-- `trans_prob`: The transmission probability of the disease. Default is 0.1.
-- `days_to_recovered`: The number of days it takes for an agent to recover. Default is 14.
-- `seed`: The seed for the random number generator. Default is 42.
-- `r̂`: The r parameter for negative binomial distribution, used only when `network_type` is `:proportionate`. If not provided, will be calculated from mean_degree and dispersion.
-- `p̂`: The p parameter for negative binomial distribution, used only when `network_type` is `:proportionate`. If not provided, will be calculated from mean_degree and dispersion.
-- `low_risk_factor`: Factor to multiply the transmission probability for low risk agents. Default is 1.0.
-- `custom_graph`: A pre-loaded graph to use instead of creating a new one. If provided, network_type will be set to :custom.
-- `edgelist_path`: Path to the edgelist file when network_type is :edgelist. Default is "degs/network".
+- `network_type`: The type of network to create. Can be `:random`, `:smallworld`, `:preferential`, `:configuration`, `:proportionatemixing`, `:edgelist`, or `:custom`.
+- `mean_degree`: The mean degree of the network. Default is 4.
+- `n_nodes`: The number of nodes in the network. Default is 1000.
+- `dispersion`: The dispersion parameter for negative binomial distributions. Default is 0.1.
+- `patient_zero`: How to select the initial infected agent. Can be `:random`, `:maxdegree`, `:maxbetweenness`, or `:maxeigenvector`. Default is `:random`.
+- `high_risk`: How high-risk agents are distributed. Can be `:random`, `:maxdegree`, `:maxbetweenness`, or `:maxeigenvector`. Default is `:random`.
+- `fraction_high_risk`: The fraction of high-risk agents. Default is 0.1.
+- `trans_prob`: The transmission probability. Default is 0.1.
+- `days_to_recovered`: Days until recovery from infection. Default is 14.
+- `seed`: Random seed. Default is 42.
+- `r̂`: Negative binomial r parameter (for proportionate mixing). Default is nothing.
+- `p̂`: Negative binomial p parameter (for proportionate mixing). Default is nothing.
+- `low_risk_factor`: Transmission multiplier for low-risk agents. Default is 1.0.
+- `use_hospitalization`: Whether to enable hospitalization dynamics. Set to `false` for SIR (Part 1), `true` (default) for SIHR (Part 2).
+- `hospitalization_prob`: Probability of hospitalization for an infected agent. Default is 0.1.
+- `days_to_hospital_recovery`: Days until recovery from hospitalization. Default is 7.
+- `custom_graph`: A pre-loaded graph object to use instead of creating a new one. If provided, `network_type` is automatically set to `:custom` and `n_nodes`/`mean_degree` are inferred. Default is nothing.
+- `edgelist_path`: Path to the edgelist file when `network_type` is `:edgelist`. Default is "degs/network".
 
 # Returns
-- `model`: The created model.
+- `model`: The initialized agent-based model.
 """
-function initialize_old(; network_type::Symbol, mean_degree::Integer=4, n_nodes::Integer=1000, dispersion::Float64=0.1, patient_zero::Symbol=:random, high_risk::Symbol=:random, fraction_high_risk::Float64=0.1, trans_prob::Float64=0.1, days_to_recovered::Integer=14, seed=42, r̂=nothing, p̂=nothing, low_risk_factor::Float64=1.0, custom_graph=nothing, edgelist_path::String="degs/network", hospitalization_prob::Float64=0.1, days_to_hospital_recovery::Integer=7)
+function initialize(;
+    network_type::Symbol,
+    mean_degree::Integer=4,
+    n_nodes::Integer=1000,
+    dispersion::Float64=0.1,
+    patient_zero::Symbol=:random,
+    high_risk::Symbol=:random,
+    fraction_high_risk::Float64=0.1,
+    trans_prob::Float64=0.1,
+    days_to_recovered::Integer=14,
+    seed=42,
+    r̂=nothing,
+    p̂=nothing,
+    low_risk_factor::Float64=1.0,
+    use_hospitalization::Bool=true,
+    hospitalization_prob::Float64=0.1,
+    days_to_hospital_recovery::Integer=7,
+    custom_graph=nothing,
+    edgelist_path::String="degs/network"
+)
     # Validate low_risk_factor
     if !(0 <= low_risk_factor <= 1)
         error("low_risk_factor must be between 0 and 1, got $low_risk_factor")
     end
-    
+
     # Create or use provided graph
     if custom_graph !== nothing
         # Use the provided custom graph
@@ -45,56 +70,13 @@ function initialize_old(; network_type::Symbol, mean_degree::Integer=4, n_nodes:
             mean_degree = round(Int, 2 * ne(graph) / nv(graph))
         end
     end
-    
+
     space = GraphSpace(graph)
     # set up properties
-    properties = create_properties(graph, network_type, n_nodes, mean_degree, dispersion, patient_zero, high_risk, fraction_high_risk, trans_prob, days_to_recovered, low_risk_factor, r̂, p̂, hospitalization_prob, days_to_hospital_recovery)
-    # set up RNG
-    rng = Xoshiro(seed)
-    # create the model
-    model = StandardABM(Person, space; agent_step!, model_step!, properties, rng)
-    # add agents, if high_risk is random, add high risk agents randomly
-    populate(model, high_risk, fraction_high_risk)
-    set_patient_zero!(model, patient_zero)
-    return model
-end
-
-
-"""
-    initialize(; network_type, mean_degree, n_nodes, dispersion, patient_zero, high_risk, fraction_high_risk, trans_prob, days_to_recovered, seed, r̂, p̂, low_risk_factor, use_hospitalization)
-
-Initialize the model with default parameters.
-
-# Arguments
-- `network_type`: The type of network to create. Can be `:random`, `:smallworld`, `:preferential`, `:configuration`, `:proportionatemixing`, or `:edgelist`.
-- `mean_degree`: The mean degree of the network. Default is 4.
-- `n_nodes`: The number of nodes in the network. Default is 1000.
-- `dispersion`: The dispersion parameter. Default is 0.1.
-- `patient_zero`: The type of patient zero. Can be `:random`, `:maxdegree`, `:maxbetweenness`, or `:maxeigenvector`.
-- `high_risk`: How high-risk agents are distributed. Default is `:random`.
-- `fraction_high_risk`: The fraction of high-risk agents. Default is 0.1.
-- `trans_prob`: The transmission probability. Default is 0.1.
-- `days_to_recovered`: Days until recovery. Default is 14.
-- `seed`: Random seed. Default is 42.
-- `r̂`: Negative binomial r parameter (for proportionate mixing). Default is nothing.
-- `p̂`: Negative binomial p parameter (for proportionate mixing). Default is nothing.
-- `low_risk_factor`: Transmission multiplier for low-risk agents. Default is 1.0.
-- `use_hospitalization`: Whether to enable hospitalization. Set to `false` for Part 1 (SIR only), `true` (default) for Part 2 (SIHR with hospitalization).
-
-# Returns
-- `model`: The created model.
-"""
-function initialize(; network_type::Symbol, mean_degree::Integer=4, n_nodes::Integer=1000, dispersion::Float64=0.1, patient_zero::Symbol=:random, high_risk::Symbol=:random, fraction_high_risk::Float64=0.1, trans_prob::Float64=0.1, days_to_recovered::Integer=14, seed=42, r̂=nothing, p̂=nothing, low_risk_factor::Float64=1.0, use_hospitalization::Bool=true)
-    # Validate low_risk_factor
-    if !(0 <= low_risk_factor <= 1)
-        error("low_risk_factor must be between 0 and 1, got $low_risk_factor")
-    end
-    
-    # create a graph space
-    graph = create_graph(; network_type, mean_degree, n_nodes, dispersion, r̂, p̂)
-    space = GraphSpace(graph)
-    # set up properties
-    properties = create_properties(graph, network_type, n_nodes, mean_degree, dispersion, patient_zero, high_risk, fraction_high_risk, trans_prob, days_to_recovered, low_risk_factor, r̂, p̂, use_hospitalization)
+    properties = create_properties(graph, network_type, n_nodes, mean_degree, dispersion,
+                                   patient_zero, high_risk, fraction_high_risk, trans_prob,
+                                   days_to_recovered, low_risk_factor, r̂, p̂,
+                                   use_hospitalization, hospitalization_prob, days_to_hospital_recovery)
     # set up RNG
     rng = Xoshiro(seed)
     # create the model
@@ -188,35 +170,25 @@ function populate(model::AgentBasedModel, high_risk::Symbol, fraction_high_risk:
     if high_risk == :random
         n_high_risk = Int(round(fraction_high_risk * model.n_nodes))
         n_low_risk = model.n_nodes - n_high_risk
-        
+
         for _ in 1:n_high_risk
             add_agent_single!(model, :S, 0, :high)
         end
         for _ in 1:n_low_risk
             add_agent_single!(model, :S, 0, :low)
         end
-    elseif high_risk == :maxdegree
-        sorted_nodes = sortperm(degree_centrality(model.graph), rev=true)
-        selected_positions = sorted_nodes[1:Int(floor(fraction_high_risk * length(sorted_nodes)))]
-        for i in 1:model.n_nodes
-            if i in selected_positions
-                add_agent!(i, model, :S, 0, :high)
-            else
-                add_agent_single!(model, :S, 0, :low)
-            end
+    else
+        centrality_func = if high_risk == :maxdegree
+            degree_centrality
+        elseif high_risk == :maxbetweenness
+            betweenness_centrality
+        elseif high_risk == :maxeigenvector
+            eigenvector_centrality
+        else
+            error("Unknown high_risk strategy: $high_risk")
         end
-    elseif high_risk == :maxbetweenness
-        sorted_nodes = sortperm(betweenness_centrality(model.graph), rev=true)
-        selected_positions = sorted_nodes[1:Int(floor(fraction_high_risk * length(sorted_nodes)))]
-        for i in 1:model.n_nodes
-            if i in selected_positions
-                add_agent!(i, model, :S, 0, :high)
-            else
-                add_agent_single!(model, :S, 0, :low)
-            end
-        end
-    elseif high_risk == :maxeigenvector
-        sorted_nodes = sortperm(eigenvector_centrality(model.graph), rev=true)
+
+        sorted_nodes = sortperm(centrality_func(model.graph), rev=true)
         selected_positions = sorted_nodes[1:Int(floor(fraction_high_risk * length(sorted_nodes)))]
         for i in 1:model.n_nodes
             if i in selected_positions

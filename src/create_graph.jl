@@ -64,17 +64,8 @@ function create_graph(; network_type::Symbol, mean_degree::Integer, n_nodes::Int
         # Create the graph with the validated degree sequence
         graph = expected_degree_graph(degree_sequence)
     elseif network_type == :edgelist
-        # Load graph from edgelist file
+        # Load graph from edgelist file and convert to undirected simple graph
         graph = loadgraph(edgelist_path, "graph_key", EdgeListFormat())
-        
-        # Remove any double edges
-        for e in edges(graph)
-            if has_edge(graph, src(e), dst(e))
-                rem_edge!(graph, src(e), dst(e))
-            end
-        end
-        
-        # Convert to undirected simple graph
         graph = SimpleGraph(graph)
     elseif network_type == :custom
         # Custom network type is handled differently in initialize.jl
