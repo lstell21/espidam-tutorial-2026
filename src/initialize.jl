@@ -60,7 +60,31 @@ function initialize_old(; network_type::Symbol, mean_degree::Integer=4, n_nodes:
 end
 
 
-function initialize(; network_type::Symbol, mean_degree::Integer=4, n_nodes::Integer=1000, dispersion::Float64=0.1, patient_zero::Symbol=:random, high_risk::Symbol=:random, fraction_high_risk::Float64=0.1, trans_prob::Float64=0.1, days_to_recovered::Integer=14, seed=42, r̂=nothing, p̂=nothing, low_risk_factor::Float64=1.0)
+"""
+    initialize(; network_type, mean_degree, n_nodes, dispersion, patient_zero, high_risk, fraction_high_risk, trans_prob, days_to_recovered, seed, r̂, p̂, low_risk_factor, use_hospitalization)
+
+Initialize the model with default parameters.
+
+# Arguments
+- `network_type`: The type of network to create. Can be `:random`, `:smallworld`, `:preferential`, `:configuration`, `:proportionatemixing`, or `:edgelist`.
+- `mean_degree`: The mean degree of the network. Default is 4.
+- `n_nodes`: The number of nodes in the network. Default is 1000.
+- `dispersion`: The dispersion parameter. Default is 0.1.
+- `patient_zero`: The type of patient zero. Can be `:random`, `:maxdegree`, `:maxbetweenness`, or `:maxeigenvector`.
+- `high_risk`: How high-risk agents are distributed. Default is `:random`.
+- `fraction_high_risk`: The fraction of high-risk agents. Default is 0.1.
+- `trans_prob`: The transmission probability. Default is 0.1.
+- `days_to_recovered`: Days until recovery. Default is 14.
+- `seed`: Random seed. Default is 42.
+- `r̂`: Negative binomial r parameter (for proportionate mixing). Default is nothing.
+- `p̂`: Negative binomial p parameter (for proportionate mixing). Default is nothing.
+- `low_risk_factor`: Transmission multiplier for low-risk agents. Default is 1.0.
+- `use_hospitalization`: Whether to enable hospitalization. Set to `false` for Part 1 (SIR only), `true` (default) for Part 2 (SIHR with hospitalization).
+
+# Returns
+- `model`: The created model.
+"""
+function initialize(; network_type::Symbol, mean_degree::Integer=4, n_nodes::Integer=1000, dispersion::Float64=0.1, patient_zero::Symbol=:random, high_risk::Symbol=:random, fraction_high_risk::Float64=0.1, trans_prob::Float64=0.1, days_to_recovered::Integer=14, seed=42, r̂=nothing, p̂=nothing, low_risk_factor::Float64=1.0, use_hospitalization::Bool=true)
     # Validate low_risk_factor
     if !(0 <= low_risk_factor <= 1)
         error("low_risk_factor must be between 0 and 1, got $low_risk_factor")
@@ -70,7 +94,7 @@ function initialize(; network_type::Symbol, mean_degree::Integer=4, n_nodes::Int
     graph = create_graph(; network_type, mean_degree, n_nodes, dispersion, r̂, p̂)
     space = GraphSpace(graph)
     # set up properties
-    properties = create_properties(graph, network_type, n_nodes, mean_degree, dispersion, patient_zero, high_risk, fraction_high_risk, trans_prob, days_to_recovered, low_risk_factor, r̂, p̂)
+    properties = create_properties(graph, network_type, n_nodes, mean_degree, dispersion, patient_zero, high_risk, fraction_high_risk, trans_prob, days_to_recovered, low_risk_factor, r̂, p̂, use_hospitalization)
     # set up RNG
     rng = Xoshiro(seed)
     # create the model
@@ -109,7 +133,7 @@ Create a dictionary of properties for the simulation.
 - `properties`: A dictionary containing the properties for the simulation.
 
 """
-function create_properties(graph, network_type, n_nodes, mean_degree, dispersion, patient_zero, high_risk, fraction_high_risk, trans_prob, days_to_recovered, low_risk_factor=1.0, r̂=nothing, p̂=nothing, hospitalization_prob=0.1, days_to_hospital_recovery=7)
+function create_properties(graph, network_type, n_nodes, mean_degree, dispersion, patient_zero, high_risk, fraction_high_risk, trans_prob, days_to_recovered, low_risk_factor=1.0, r̂=nothing, p̂=nothing, use_hospitalization=true, hospitalization_prob=0.1, days_to_hospital_recovery=7)
     # Ensure low_risk_factor is between 0 and 1
     low_risk_factor = clamp(low_risk_factor, 0.0, 1.0)
     
@@ -125,6 +149,7 @@ function create_properties(graph, network_type, n_nodes, mean_degree, dispersion
         :trans_prob => trans_prob,
         :days_to_recovered => days_to_recovered,
         :low_risk_factor => low_risk_factor,
+        :use_hospitalization => use_hospitalization,
         :hospitalization_prob => hospitalization_prob,
         :days_to_hospital_recovery => days_to_hospital_recovery,
         :susceptible_count => n_nodes,

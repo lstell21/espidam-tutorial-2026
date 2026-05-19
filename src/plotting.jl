@@ -73,10 +73,13 @@ function plot_epidemic_trajectories(mdf, network_type; title_suffix="")
           linewidth=2, 
           color=:red)
     
-    plot!(p, mdf.time, mdf.hospitalized_count, 
-          label="Hospitalized", 
-          linewidth=2, 
-          color=:orange)
+    # Only plot hospitalized count if it exists in the dataframe
+    if :hospitalized_count in names(mdf)
+        plot!(p, mdf.time, mdf.hospitalized_count, 
+              label="Hospitalized", 
+              linewidth=2, 
+              color=:orange)
+    end
     
     plot!(p, mdf.time, mdf.recovered_count, 
           label="Recovered", 
@@ -230,7 +233,7 @@ function run_and_plot_comparison(; network_types::Vector{Symbol}, mean_degree::I
                                n_nodes::Int=1000, dispersion::Float64=0.1, 
                                patient_zero::Symbol=:random, high_risk::Symbol=:random, 
                                fraction_high_risk::Float64=1.0, low_risk_factor::Float64=1.0,
-                               trans_prob::Float64=0.1, n_steps::Int=100, boxplot_colors=nothing, r̂=nothing, p̂=nothing)
+                               trans_prob::Float64=0.1, n_steps::Int=100, boxplot_colors=nothing, r̂=nothing, p̂=nothing, use_hospitalization::Bool=true)
     # Validate low_risk_factor
     if !(0 <= low_risk_factor <= 1)
         error("low_risk_factor must be between 0 and 1, got $low_risk_factor")
@@ -253,7 +256,7 @@ function run_and_plot_comparison(; network_types::Vector{Symbol}, mean_degree::I
         # Run simulations
         multiple_runs = run_simulations(; network_type, mean_degree, n_nodes, dispersion, 
                                        patient_zero, high_risk, fraction_high_risk, 
-                                       low_risk_factor, trans_prob, n_steps, r̂, p̂)
+                                       low_risk_factor, trans_prob, n_steps, r̂, p̂, use_hospitalization)
         
         # Process results
         grouped_data = groupby(multiple_runs, [:seed])

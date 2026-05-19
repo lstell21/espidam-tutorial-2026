@@ -11,15 +11,20 @@ Update the state of an agent in the ABM model for one time step.
 - If infected, increment days infected and recover if enough time has passed
 - If infected, potentially transmit to nearby susceptible agents with probability
   adjusted by risk level
-- Handle hospitalization transitions for infected agents
+- Handle hospitalization transitions for infected agents (if `model.use_hospitalization` is true)
+  - When `use_hospitalization=true` (default): Some infected agents may be hospitalized on day 1
+  - When `use_hospitalization=false`: No hospitalization occurs (used in Part 1)
 """
 function agent_step!(person::Person, model::AgentBasedModel)
+    # Check if hospitalization is enabled (defaults to true for backward compatibility)
+    use_hospitalization = model.use_hospitalization
+    
     # Handle recovery if infected
     if person.status == :I
         person.days_infected += 1
         
         # Check if agent should be hospitalized (only on day 1 of infection)
-        if person.days_infected == 1 && rand() < model.hospitalization_prob
+        if use_hospitalization && person.days_infected == 1 && rand() < model.hospitalization_prob
             person.status = :H
             return
         end
@@ -42,7 +47,7 @@ function agent_step!(person::Person, model::AgentBasedModel)
             end
         end
         
-    elseif person.status == :H
+    elseif use_hospitalization && person.status == :H
         # Increment days infected (hospitalized agents are still infected)
         person.days_infected += 1
         

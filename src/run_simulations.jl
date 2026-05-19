@@ -28,7 +28,7 @@ mdf = run_simulations(network_type=:random, mean_degree=4, patient_zero=:random,
 function run_simulations(; network_type::Symbol, mean_degree::Int, n_nodes::Int=1000, 
                         dispersion::Float64=0.1, patient_zero::Symbol=:random, 
                         high_risk::Symbol=:random, fraction_high_risk::Float64=1.0, low_risk_factor::Float64=1.0,
-                        trans_prob::Float64=0.1, n_steps::Int=100, r̂=nothing, p̂=nothing)
+                        trans_prob::Float64=0.1, n_steps::Int=100, r̂=nothing, p̂=nothing, use_hospitalization::Bool=true)
     # Validate low_risk_factor
     if !(0 <= low_risk_factor <= 1)
         error("low_risk_factor must be between 0 and 1, got $low_risk_factor")
@@ -46,7 +46,8 @@ function run_simulations(; network_type::Symbol, mean_degree::Int, n_nodes::Int=
         :trans_prob => trans_prob,
         :fraction_high_risk => fraction_high_risk,
         :low_risk_factor => low_risk_factor,
-        :days_to_recovered => 14
+        :days_to_recovered => 14,
+        :use_hospitalization => use_hospitalization
     )
     
     # Add r̂ and p̂ to parameters if provided
@@ -57,9 +58,13 @@ function run_simulations(; network_type::Symbol, mean_degree::Int, n_nodes::Int=
         parameters[:p̂] = p̂
     end
 
-    # Data to collect
+    # Data to collect - conditionally include hospitalized_count
     adata = [:status]
-    mdata = [:susceptible_count, :infected_count, :hospitalized_count, :recovered_count]
+    if use_hospitalization
+        mdata = [:susceptible_count, :infected_count, :hospitalized_count, :recovered_count]
+    else
+        mdata = [:susceptible_count, :infected_count, :recovered_count]
+    end
     
     # Run the simulation for all combinations of parameters
     _, mdf = paramscan(
