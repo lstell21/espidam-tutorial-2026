@@ -19,6 +19,7 @@ Run simulations for an epidemiological model with different combinations of para
 - `use_hospitalization::Bool`: Whether to enable hospitalization. Default is true.
 - `use_risk_switching::Bool`: Whether to enable PPE adoption dynamics. Default is false.
 - `risk_switch_rate::Float64`: PPE adoption speed multiplier. Default is 1.0.
+- `degrees`: Degree sequence vector for `:configuration` network type. Default is nothing.
 
 # Returns
 - `mdf::DataFrame`: A DataFrame containing the simulation results.
@@ -29,7 +30,8 @@ function run_simulations(; network_type::Symbol, mean_degree::Int, n_nodes::Int=
                         low_risk_factor::Float64=1.0, trans_prob::Float64=0.1,
                         n_steps::Int=100, r̂=nothing, p̂=nothing,
                         use_hospitalization::Bool=true,
-                        use_risk_switching::Bool=false, risk_switch_rate::Float64=1.0)
+                        use_risk_switching::Bool=false, risk_switch_rate::Float64=1.0,
+                        degrees=nothing)
     if !(0 <= low_risk_factor <= 1)
         error("low_risk_factor must be between 0 and 1, got $low_risk_factor")
     end
@@ -56,6 +58,9 @@ function run_simulations(; network_type::Symbol, mean_degree::Int, n_nodes::Int=
     end
     if p̂ !== nothing
         parameters[:p̂] = p̂
+    end
+    if degrees !== nothing
+        parameters[:degrees] = [degrees]  # wrap so paramscan treats the whole sequence as one option
     end
 
     adata = [:status]

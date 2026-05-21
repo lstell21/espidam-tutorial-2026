@@ -39,7 +39,7 @@ function agent_step!(person::Person, model::AgentBasedModel)
         person.days_infected += 1
 
         # Check if agent should be hospitalized (only on day 1 of infection)
-        if model.use_hospitalization && person.days_infected == 1 && rand() < model.hospitalization_prob
+        if model.use_hospitalization && person.days_infected == 1 && rand(abmrng(model)) < model.hospitalization_prob
             person.status = :H
             return
         end

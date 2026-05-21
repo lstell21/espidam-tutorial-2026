@@ -1,6 +1,6 @@
 using GraphIO.EdgeList
 """
-    create_graph(; network_type, mean_degree, n_nodes, dispersion = 0.1, β = 0.1, k = 3, r̂ = nothing, p̂ = nothing, edgelist_path = nothing)
+    create_graph(; network_type, mean_degree, n_nodes, dispersion = 0.1, β = 0.1, k = 3, r̂ = nothing, p̂ = nothing, edgelist_path = nothing, degrees = nothing)
 
 Create a graph based on the specified network type.
 
@@ -14,6 +14,7 @@ Create a graph based on the specified network type.
 - `r̂`: The r parameter for negative binomial distribution, used only when `network_type` is `:proportionate`. If not provided, will be calculated from mean_degree and dispersion.
 - `p̂`: The p parameter for negative binomial distribution, used only when `network_type` is `:proportionate`. If not provided, will be calculated from mean_degree and dispersion.
 - `edgelist_path`: The path to the edgelist file, used only when `network_type` is `:edgelist`. Default is "degs/network".
+- `degrees`: Degree sequence vector (required for `:configuration` network type).
 
 # Returns
 - `graph`: The created graph.
@@ -23,9 +24,10 @@ Create a graph based on the specified network type.
 g = create_graph(; network_type = :random,  mean_degree = 4)
 g = create_graph(; network_type = :proportionate, n_nodes = 1000, r̂ = 5.0, p̂ = 0.4)
 g = create_graph(; network_type = :edgelist, edgelist_path = "degs/network")
+g = create_graph(; network_type = :configuration, degrees = my_degree_vector)
 ```
 """
-function create_graph(; network_type::Symbol, mean_degree::Integer, n_nodes::Integer=1000, dispersion::Float64=0.1, β::Float64=0.1, k::Integer=4, r̂=nothing, p̂=nothing, edgelist_path::String="degs/network")
+function create_graph(; network_type::Symbol, mean_degree::Integer, n_nodes::Integer=1000, dispersion::Float64=0.1, β::Float64=0.1, k::Integer=4, r̂=nothing, p̂=nothing, edgelist_path::String="degs/network", degrees=nothing)
     if network_type == :random
         graph = Graphs.erdos_renyi(n_nodes, mean_degree / n_nodes)
     elseif network_type == :smallworld
@@ -33,7 +35,10 @@ function create_graph(; network_type::Symbol, mean_degree::Integer, n_nodes::Int
     elseif network_type == :preferential
         graph = Graphs.barabasi_albert(n_nodes, Int(round(mean_degree / 2)))
     elseif network_type == :configuration
-        graph = Graphs.random_configuration_model(1000, degrees[!, 1])
+        if degrees === nothing
+            error("For network_type=:configuration, the `degrees` argument must be provided (a vector of node degrees).")
+        end
+        graph = Graphs.random_configuration_model(1000, degrees)
     elseif network_type == :proportionatemixing || network_type == :proportionate
         if isnothing(r̂) || isnothing(p̂)
             error("Both r̂ and p̂ must be provided for proportionate mixing networks")

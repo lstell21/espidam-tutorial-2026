@@ -56,14 +56,14 @@ plot_epidemic_trajectories(mdf, :random)
 ```
 """
 function plot_epidemic_trajectories(mdf, network_type; title_suffix="")
-    # Create the plot
+    model_label = :hospitalized_count in names(mdf) ? "SIHR" : "SIR"
     p = plot(mdf.time, mdf.susceptible_count, 
              label="Susceptible", 
              linewidth=2, 
              color=:blue,
              xlabel="Time (days)", 
              ylabel="Number of agents",
-             title="SIHR Epidemic Dynamics - $(titlecase(string(network_type))) Network$(title_suffix)",
+             title="$(model_label) Epidemic Dynamics - $(titlecase(string(network_type))) Network$(title_suffix)",
              legend=:right,
              size=(800, 500),
              margin=5mm)
@@ -120,6 +120,7 @@ Plot a single run of an epidemic simulation.
 - `n_steps::Int`: The number of simulation steps to run. Default is 100.
 - `r̂`: The r parameter for negative binomial distribution, used only when `network_type` is `:proportionatemixing`. Default is nothing.
 - `p̂`: The p parameter for negative binomial distribution, used only when `network_type` is `:proportionatemixing`. Default is nothing.
+- `degrees`: Degree sequence vector for `:configuration` network type. Default is nothing.
 
 # Returns
 - `plotdynamics`: A plot of the epidemic trajectories.
@@ -135,7 +136,7 @@ function plot_single_run(; network_type::Symbol, mean_degree::Int=4, n_nodes::In
                        dispersion::Float64=0.1, patient_zero::Symbol=:random,
                        high_contact::Symbol=:random, fraction_high_contact::Float64=1.0,
                        low_risk_factor::Float64=1.0, trans_prob::Float64=0.1, n_steps::Int=100,
-                       r̂=nothing, p̂=nothing, use_hospitalization::Bool=true,
+                       r̂=nothing, p̂=nothing, use_hospitalization::Bool=true, degrees=nothing,
                        figures_dir::String="figures")
     # Validate low_risk_factor
     if !(0 <= low_risk_factor <= 1)
@@ -145,7 +146,7 @@ function plot_single_run(; network_type::Symbol, mean_degree::Int=4, n_nodes::In
     # Initialize model and run simulation
     model = initialize(; network_type, mean_degree, n_nodes, dispersion, patient_zero,
                      high_contact, fraction_high_contact, low_risk_factor, trans_prob, r̂, p̂,
-                     use_hospitalization)
+                     use_hospitalization, degrees)
 
     # Define adata and mdata locally to avoid relying on global variables
     adata = [:status]
@@ -239,8 +240,8 @@ function run_and_plot_comparison(; network_types::Vector{Symbol}, mean_degree::I
                                patient_zero::Symbol=:random, high_contact::Symbol=:random,
                                fraction_high_contact::Float64=1.0, low_risk_factor::Float64=1.0,
                                trans_prob::Float64=0.1, n_steps::Int=100, boxplot_colors=nothing,
-                               r̂=nothing, p̂=nothing, use_hospitalization::Bool=true,
-                               figures_dir::String="figures", data_dir::String="data",
+                               r̂=nothing, p̂=nothing, use_hospitalization::Bool=false,
+                               degrees=nothing, figures_dir::String="figures", data_dir::String="data",
                                output_dir_path::String="output", save_data::Bool=false)
     # Validate low_risk_factor
     if !(0 <= low_risk_factor <= 1)
@@ -259,12 +260,14 @@ function run_and_plot_comparison(; network_types::Vector{Symbol}, mean_degree::I
     for network_type in network_types
         println("Running simulations for $(network_type) network...")
         model = initialize(; network_type, mean_degree, n_nodes, dispersion, patient_zero, 
-                          high_contact, fraction_high_contact, low_risk_factor, trans_prob, r̂, p̂)
+                          high_contact, fraction_high_contact, low_risk_factor, trans_prob, r̂, p̂,
+                          degrees=degrees)
         
         # Run simulations
         multiple_runs = run_simulations(; network_type, mean_degree, n_nodes, dispersion, 
                                        patient_zero, high_contact, fraction_high_contact, 
-                                       low_risk_factor, trans_prob, n_steps, r̂, p̂, use_hospitalization)
+                                       low_risk_factor, trans_prob, n_steps, r̂, p̂, use_hospitalization,
+                                       degrees=degrees)
         
         # Process results
         grouped_data = groupby(multiple_runs, [:seed])
@@ -412,13 +415,13 @@ centrality_comparison = plot_centrality_comparison(
 """
 function plot_centrality_comparison(;network_types=[:random, :smallworld, :preferential],
                                    mean_degree=4, n_nodes=1000, link_axes=false,
-                                   r̂=nothing, p̂=nothing, figures_dir::String="figures")
+                                   r̂=nothing, p̂=nothing, degrees=nothing, figures_dir::String="figures")
     # Initialize empty DataFrames to store the centrality data
     centrality_data = Dict()
     
     # Generate and analyze each network type
     for nt in network_types
-        model = initialize(; network_type=nt, mean_degree=mean_degree, n_nodes=n_nodes, r̂=r̂, p̂=p̂)
+        model = initialize(; network_type=nt, mean_degree=mean_degree, n_nodes=n_nodes, r̂=r̂, p̂=p̂, degrees=degrees)
         analysis = analyze_graph(model.graph)
         centrality_data[nt] = analysis["centrality"]
     end
@@ -607,7 +610,7 @@ metrics_plot = plot_network_metrics_comparison(
 """
 function plot_network_metrics_comparison(;network_types=[:random, :smallworld, :preferential],
                                        mean_degree=4, n_nodes=1000, r̂=nothing, p̂=nothing,
-                                       figures_dir::String="figures")
+                                       degrees=nothing, figures_dir::String="figures")
     # Define a colorblind-friendly palette for the five network types
     # Using a modified version of Wong's palette which is colorblind-friendly
     network_color_map = Dict(
@@ -635,7 +638,7 @@ function plot_network_metrics_comparison(;network_types=[:random, :smallworld, :
     # Collect metrics for each network type
     for nt in network_types
         println("Analyzing $(nt) network...")
-        model = initialize(; network_type=nt, mean_degree=mean_degree, n_nodes=n_nodes, r̂=r̂, p̂=p̂)
+        model = initialize(; network_type=nt, mean_degree=mean_degree, n_nodes=n_nodes, r̂=r̂, p̂=p̂, degrees=degrees)
         analysis = analyze_graph(model.graph)
         
         # Extract key metrics

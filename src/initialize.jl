@@ -2,7 +2,7 @@
     initialize(; network_type, mean_degree, n_nodes, dispersion, patient_zero, high_contact,
                fraction_high_contact, trans_prob, days_to_recovered, seed, r̂, p̂, low_risk_factor,
                use_hospitalization, hospitalization_prob, days_to_hospital_recovery,
-               use_risk_switching, risk_switch_rate, custom_graph, edgelist_path)
+               use_risk_switching, risk_switch_rate, custom_graph, edgelist_path, degrees)
 
 Initialize the model with specified parameters.
 
@@ -27,6 +27,7 @@ Initialize the model with specified parameters.
 - `risk_switch_rate`: Multiplier for PPE adoption speed; switching probability per step = hospitalization_rate × risk_switch_rate. Default is 1.0.
 - `custom_graph`: A pre-loaded graph object to use instead of creating a new one. If provided, `n_nodes`/`mean_degree` are inferred from the graph; `network_type` is kept as specified by the caller. Default is nothing.
 - `edgelist_path`: Path to the edgelist file when `network_type` is `:edgelist`. Default is "degs/network".
+- `degrees`: Degree sequence vector for `:configuration` network type. Default is nothing.
 
 # Returns
 - `model`: The initialized agent-based model.
@@ -51,7 +52,8 @@ function initialize(;
     use_risk_switching::Bool=false,
     risk_switch_rate::Float64=1.0,
     custom_graph=nothing,
-    edgelist_path::String="degs/network"
+    edgelist_path::String="degs/network",
+    degrees=nothing
 )
     if !(0 <= low_risk_factor <= 1)
         error("low_risk_factor must be between 0 and 1, got $low_risk_factor")
@@ -63,7 +65,7 @@ function initialize(;
         n_nodes = nv(graph)
         mean_degree = round(Int, 2 * ne(graph) / nv(graph))
     else
-        graph = create_graph(; network_type, mean_degree, n_nodes, dispersion, r̂, p̂, edgelist_path)
+        graph = create_graph(; network_type, mean_degree, n_nodes, dispersion, r̂, p̂, edgelist_path, degrees)
         if network_type == :edgelist
             n_nodes = nv(graph)
             mean_degree = round(Int, 2 * ne(graph) / nv(graph))
