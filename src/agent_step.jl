@@ -8,33 +8,19 @@ Update the state of an agent in the ABM model for one time step.
 - `model::AgentBasedModel`: The ABM model containing the agent.
 
 # Description
-- If `use_risk_switching` is enabled, susceptible HCWs switch to low-contact as the
-  hospitalization rate rises (PPE adoption) and revert back to high-contact as it falls
-  (HCWs let their guard down when hospitalizations decline).
 - If infected, increment days infected and recover if enough time has passed.
-- If infected, potentially transmit to nearby susceptibles; transmission probability is
-  reduced by `low_risk_factor` when the infector has `contact_rate = :low`.
+- If infected, potentially transmit to nearby susceptibles. The base per-contact
+  transmission probability is `trans_prob` for high-contact infectors (HCWs) and
+  `trans_prob * low_risk_factor` for low-contact infectors (patients).
+- If `use_ppe_adoption` is enabled, HCW transmission is additionally scaled down by a
+  behavioral "awareness" factor that grows with the observed hospitalization burden
+  (PPE adoption). The factor is a saturating function of the hospitalized fraction, so
+  it rises as hospitalizations climb and relaxes back as they fall — no per-agent state
+  is switched, only the effective transmission probability is modulated.
 - If `use_hospitalization` is true, infected agents may be hospitalized on day 1.
   Hospitalized agents don't transmit and recover after `days_to_hospital_recovery` days.
 """
 function agent_step!(person::Person, model::AgentBasedModel)
-    # PPE adoption/reversal: high-contact susceptibles switch to low-contact
-    # as hospitalization rate rises, and switch back as it falls (HCWs let guard down)
-    if model.use_risk_switching && person.status == :S
-        hosp_rate = model.hospitalized_count / model.n_nodes
-        if person.contact_rate == :high
-            # Rising hospitalizations → adopt PPE
-            if rand(abmrng(model)) < hosp_rate * model.risk_switch_rate
-                person.contact_rate = :low
-            end
-        else
-            # Falling hospitalizations → revert to high-contact
-            if rand(abmrng(model)) < (1 - hosp_rate) * model.risk_switch_rate
-                person.contact_rate = :high
-            end
-        end
-    end
-
     if person.status == :I
         person.days_infected += 1
 
@@ -50,10 +36,19 @@ function agent_step!(person::Person, model::AgentBasedModel)
             return
         end
 
-        # Transmit to susceptible neighbors; transmission depends on infector's contact rate
+        # Effective per-contact transmission probability for this infector.
+        # Identity gap (HCW vs patient) is fixed via low_risk_factor; PPE adoption is a
+        # dynamic, severity-driven reduction applied to HCW transmission only.
+        trans_prob = person.contact_rate == :high ? model.trans_prob : model.trans_prob * model.low_risk_factor
+        if model.use_ppe_adoption && person.contact_rate == :high
+            signal = model.hospitalized_count / model.n_nodes
+            reduction = model.max_ppe_reduction * signal / (signal + model.ppe_half_saturation)
+            trans_prob *= (1.0 - reduction)
+        end
+
+        # Transmit to susceptible neighbors
         for neighbor in nearby_agents(person, model, 1)
             if neighbor.status == :S
-                trans_prob = person.contact_rate == :high ? model.trans_prob : model.trans_prob * model.low_risk_factor
                 if rand(abmrng(model)) < trans_prob
                     neighbor.status = :I
                     neighbor.days_infected = 0

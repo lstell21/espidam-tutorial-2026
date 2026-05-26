@@ -2,7 +2,8 @@
     initialize(; network_type, mean_degree, n_nodes, dispersion, patient_zero, high_contact,
                fraction_high_contact, trans_prob, days_to_recovered, seed, r̂, p̂, low_risk_factor,
                use_hospitalization, hospitalization_prob, days_to_hospital_recovery,
-               use_risk_switching, risk_switch_rate, custom_graph, edgelist_path, degrees)
+               use_ppe_adoption, max_ppe_reduction, ppe_half_saturation, custom_graph,
+               edgelist_path, degrees)
 
 Initialize the model with specified parameters.
 
@@ -23,8 +24,9 @@ Initialize the model with specified parameters.
 - `use_hospitalization`: Whether to enable hospitalization dynamics. Set to `false` for SIR, `true` (default) for SIHR.
 - `hospitalization_prob`: Probability of hospitalization for an infected agent. Default is 0.1.
 - `days_to_hospital_recovery`: Days until recovery from hospitalization. Default is 7.
-- `use_risk_switching`: Whether to enable PPE-adoption dynamics (high-contact agents switch to low-contact as hospitalization rises). Default is false.
-- `risk_switch_rate`: Multiplier for PPE adoption speed; switching probability per step = hospitalization_rate × risk_switch_rate. Default is 1.0.
+- `use_ppe_adoption`: Whether to enable behavioral PPE-adoption dynamics (HCW transmission is scaled down as the hospitalization burden rises). Default is false.
+- `max_ppe_reduction`: Maximum fractional reduction in HCW transmission achievable through PPE (0–1). E.g. 0.8 means PPE can cut HCW transmission by up to 80% at high hospitalization burden. Default is 0.8.
+- `ppe_half_saturation`: Hospitalized fraction at which the behavioral response reaches half of `max_ppe_reduction`. Smaller values mean HCWs react to the outbreak earlier. Default is 0.02.
 - `custom_graph`: A pre-loaded graph object to use instead of creating a new one. If provided, `n_nodes`/`mean_degree` are inferred from the graph; `network_type` is kept as specified by the caller. Default is nothing.
 - `edgelist_path`: Path to the edgelist file when `network_type` is `:edgelist`. Default is "degs/network".
 - `degrees`: Degree sequence vector for `:configuration` network type. Default is nothing.
@@ -49,8 +51,9 @@ function initialize(;
     use_hospitalization::Bool=true,
     hospitalization_prob::Float64=0.1,
     days_to_hospital_recovery::Integer=7,
-    use_risk_switching::Bool=false,
-    risk_switch_rate::Float64=1.0,
+    use_ppe_adoption::Bool=false,
+    max_ppe_reduction::Float64=0.8,
+    ppe_half_saturation::Float64=0.02,
     custom_graph=nothing,
     edgelist_path::String="degs/network",
     degrees=nothing
@@ -77,7 +80,7 @@ function initialize(;
                                    patient_zero, high_contact, fraction_high_contact, trans_prob,
                                    days_to_recovered, low_risk_factor, r̂, p̂,
                                    use_hospitalization, hospitalization_prob, days_to_hospital_recovery,
-                                   use_risk_switching, risk_switch_rate)
+                                   use_ppe_adoption, max_ppe_reduction, ppe_half_saturation)
     rng = Xoshiro(seed)
     model = StandardABM(Person, space; agent_step!, model_step!, properties, rng)
     populate(model, high_contact, fraction_high_contact)
@@ -93,7 +96,7 @@ function create_properties(graph, network_type, n_nodes, mean_degree, dispersion
                            high_contact, fraction_high_contact, trans_prob, days_to_recovered,
                            low_risk_factor=1.0, r̂=nothing, p̂=nothing,
                            use_hospitalization=true, hospitalization_prob=0.1, days_to_hospital_recovery=7,
-                           use_risk_switching=false, risk_switch_rate=1.0)
+                           use_ppe_adoption=false, max_ppe_reduction=0.8, ppe_half_saturation=0.02)
     low_risk_factor = clamp(low_risk_factor, 0.0, 1.0)
 
     properties = Dict(
@@ -111,8 +114,9 @@ function create_properties(graph, network_type, n_nodes, mean_degree, dispersion
         :use_hospitalization => use_hospitalization,
         :hospitalization_prob => hospitalization_prob,
         :days_to_hospital_recovery => days_to_hospital_recovery,
-        :use_risk_switching => use_risk_switching,
-        :risk_switch_rate => risk_switch_rate,
+        :use_ppe_adoption => use_ppe_adoption,
+        :max_ppe_reduction => max_ppe_reduction,
+        :ppe_half_saturation => ppe_half_saturation,
         :susceptible_count => n_nodes,
         :infected_count => 1,
         :hospitalized_count => 0,

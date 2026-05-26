@@ -17,8 +17,9 @@ Run simulations for an epidemiological model with different combinations of para
 - `p̂`: The p parameter for negative binomial distribution. Default is nothing.
 - `low_risk_factor::Float64`: Transmission multiplier for low-contact agents (0–1). Default is 1.0.
 - `use_hospitalization::Bool`: Whether to enable hospitalization. Default is true.
-- `use_risk_switching::Bool`: Whether to enable PPE adoption dynamics. Default is false.
-- `risk_switch_rate::Float64`: PPE adoption speed multiplier. Default is 1.0.
+- `use_ppe_adoption::Bool`: Whether to enable behavioral PPE adoption dynamics. Default is false.
+- `max_ppe_reduction::Float64`: Maximum fractional reduction in HCW transmission via PPE (0–1). Default is 0.8.
+- `ppe_half_saturation::Float64`: Hospitalized fraction at which PPE response reaches half its maximum. Default is 0.02.
 - `degrees`: Degree sequence vector for `:configuration` network type. Default is nothing.
 
 # Returns
@@ -30,7 +31,8 @@ function run_simulations(; network_type::Symbol, mean_degree::Int, n_nodes::Int=
                         low_risk_factor::Float64=1.0, trans_prob::Float64=0.1,
                         n_steps::Int=100, r̂=nothing, p̂=nothing,
                         use_hospitalization::Bool=true,
-                        use_risk_switching::Bool=false, risk_switch_rate::Float64=1.0,
+                        use_ppe_adoption::Bool=false, max_ppe_reduction::Float64=0.8,
+                        ppe_half_saturation::Float64=0.02,
                         degrees=nothing)
     if !(0 <= low_risk_factor <= 1)
         error("low_risk_factor must be between 0 and 1, got $low_risk_factor")
@@ -49,8 +51,9 @@ function run_simulations(; network_type::Symbol, mean_degree::Int, n_nodes::Int=
         :low_risk_factor => low_risk_factor,
         :days_to_recovered => 14,
         :use_hospitalization => use_hospitalization,
-        :use_risk_switching => use_risk_switching,
-        :risk_switch_rate => risk_switch_rate
+        :use_ppe_adoption => use_ppe_adoption,
+        :max_ppe_reduction => max_ppe_reduction,
+        :ppe_half_saturation => ppe_half_saturation
     )
 
     if r̂ !== nothing
