@@ -1,4 +1,5 @@
 using GraphIO.EdgeList
+using Random
 """
     create_graph(; network_type, mean_degree, n_nodes, dispersion = 0.1, β = 0.1, k = 3, r̂ = nothing, p̂ = nothing, edgelist_path = nothing, degrees = nothing)
 
@@ -27,25 +28,25 @@ g = create_graph(; network_type = :edgelist, edgelist_path = "degs/network")
 g = create_graph(; network_type = :configuration, degrees = my_degree_vector)
 ```
 """
-function create_graph(; network_type::Symbol, mean_degree::Integer, n_nodes::Integer=1000, dispersion::Float64=0.1, β::Float64=0.1, k::Integer=4, r̂=nothing, p̂=nothing, edgelist_path::String="degs/network", degrees=nothing)
+function create_graph(; network_type::Symbol, mean_degree::Integer, n_nodes::Integer=1000, dispersion::Float64=0.1, β::Float64=0.1, k::Integer=4, r̂=nothing, p̂=nothing, edgelist_path::String="degs/network", degrees=nothing, rng::AbstractRNG=Random.default_rng())
     if network_type == :random
-        graph = Graphs.erdos_renyi(n_nodes, mean_degree / n_nodes)
+        graph = Graphs.erdos_renyi(n_nodes, mean_degree / n_nodes; rng)
     elseif network_type == :smallworld
-        graph = Graphs.newman_watts_strogatz(n_nodes, mean_degree, β::Float64)
+        graph = Graphs.newman_watts_strogatz(n_nodes, mean_degree, β::Float64; rng)
     elseif network_type == :preferential
-        graph = Graphs.barabasi_albert(n_nodes, Int(round(mean_degree / 2)))
+        graph = Graphs.barabasi_albert(n_nodes, Int(round(mean_degree / 2)); rng)
     elseif network_type == :configuration
         if degrees === nothing
             error("For network_type=:configuration, the `degrees` argument must be provided (a vector of node degrees).")
         end
-        graph = Graphs.random_configuration_model(1000, degrees)
+        graph = Graphs.random_configuration_model(1000, degrees; rng)
     elseif network_type == :proportionatemixing || network_type == :proportionate
         if isnothing(r̂) || isnothing(p̂)
             error("Both r̂ and p̂ must be provided for proportionate mixing networks")
         end
-        
+
         # Generate degree sequence from negative binomial distribution
-        degree_sequence = rand(NegativeBinomial(r̂, p̂), n_nodes)
+        degree_sequence = rand(rng, NegativeBinomial(r̂, p̂), n_nodes)
         
         # Ensure all degrees are within valid bounds [0, n_nodes-1]
         degree_sequence = clamp.(degree_sequence, 0, n_nodes - 1)

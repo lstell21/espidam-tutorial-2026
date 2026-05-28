@@ -31,6 +31,9 @@ function run_simulations(; network_type::Symbol, mean_degree::Int, n_nodes::Int=
                         low_risk_factor::Float64=1.0, trans_prob::Float64=0.1,
                         n_steps::Int=100, r̂=nothing, p̂=nothing,
                         use_hospitalization::Bool=true,
+                        hospitalization_prob::Float64=0.1,
+                        hospitalization_day::Int=1,
+                        days_to_hospital_recovery::Int=7,
                         use_ppe_adoption::Bool=false, max_ppe_reduction::Float64=0.8,
                         ppe_half_saturation::Float64=0.02,
                         degrees=nothing)
@@ -51,6 +54,9 @@ function run_simulations(; network_type::Symbol, mean_degree::Int, n_nodes::Int=
         :low_risk_factor => low_risk_factor,
         :days_to_recovered => 14,
         :use_hospitalization => use_hospitalization,
+        :hospitalization_prob => hospitalization_prob,
+        :hospitalization_day => hospitalization_day,
+        :days_to_hospital_recovery => days_to_hospital_recovery,
         :use_ppe_adoption => use_ppe_adoption,
         :max_ppe_reduction => max_ppe_reduction,
         :ppe_half_saturation => ppe_half_saturation

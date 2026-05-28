@@ -17,15 +17,16 @@ Update the state of an agent in the ABM model for one time step.
   (PPE adoption). The factor is a saturating function of the hospitalized fraction, so
   it rises as hospitalizations climb and relaxes back as they fall — no per-agent state
   is switched, only the effective transmission probability is modulated.
-- If `use_hospitalization` is true, infected agents may be hospitalized on day 1.
-  Hospitalized agents don't transmit and recover after `days_to_hospital_recovery` days.
+- If `use_hospitalization` is true, infected agents may be hospitalized on day
+  `model.hospitalization_day` of infection (default 1). Hospitalized agents
+  don't transmit and recover after `days_to_hospital_recovery` days.
 """
 function agent_step!(person::Person, model::AgentBasedModel)
     if person.status == :I
         person.days_infected += 1
 
-        # Check if agent should be hospitalized (only on day 1 of infection)
-        if model.use_hospitalization && person.days_infected == 1 && rand(abmrng(model)) < model.hospitalization_prob
+        # Check if agent should be hospitalized (only on the configured day of infection)
+        if model.use_hospitalization && person.days_infected == model.hospitalization_day && rand(abmrng(model)) < model.hospitalization_prob
             person.status = :H
             return
         end

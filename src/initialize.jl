@@ -22,7 +22,8 @@ Initialize the model with specified parameters.
 - `p̂`: Negative binomial p parameter (for proportionate mixing). Default is nothing.
 - `low_risk_factor`: Transmission multiplier for low-contact agents (0–1). Default is 1.0.
 - `use_hospitalization`: Whether to enable hospitalization dynamics. Set to `false` for SIR, `true` (default) for SIHR.
-- `hospitalization_prob`: Probability of hospitalization for an infected agent. Default is 0.1.
+- `hospitalization_prob`: Probability of hospitalization for an infected agent (rolled once, on `hospitalization_day`). Default is 0.1.
+- `hospitalization_day`: Day of infection on which the hospitalization roll is made (1 = newly infected agents may be hospitalized before their first transmission step). Default is 1.
 - `days_to_hospital_recovery`: Days until recovery from hospitalization. Default is 7.
 - `use_ppe_adoption`: Whether to enable behavioral PPE-adoption dynamics (HCW transmission is scaled down as the hospitalization burden rises). Default is false.
 - `max_ppe_reduction`: Maximum fractional reduction in HCW transmission achievable through PPE (0–1). E.g. 0.8 means PPE can cut HCW transmission by up to 80% at high hospitalization burden. Default is 0.8.
@@ -50,6 +51,7 @@ function initialize(;
     low_risk_factor::Float64=1.0,
     use_hospitalization::Bool=true,
     hospitalization_prob::Float64=0.1,
+    hospitalization_day::Integer=1,
     days_to_hospital_recovery::Integer=7,
     use_ppe_adoption::Bool=false,
     max_ppe_reduction::Float64=0.8,
@@ -62,13 +64,15 @@ function initialize(;
         error("low_risk_factor must be between 0 and 1, got $low_risk_factor")
     end
 
+    rng = Xoshiro(seed)
+
     # Create or use provided graph
     if custom_graph !== nothing
         graph = custom_graph
         n_nodes = nv(graph)
         mean_degree = round(Int, 2 * ne(graph) / nv(graph))
     else
-        graph = create_graph(; network_type, mean_degree, n_nodes, dispersion, r̂, p̂, edgelist_path, degrees)
+        graph = create_graph(; network_type, mean_degree, n_nodes, dispersion, r̂, p̂, edgelist_path, degrees, rng)
         if network_type == :edgelist
             n_nodes = nv(graph)
             mean_degree = round(Int, 2 * ne(graph) / nv(graph))
@@ -79,9 +83,9 @@ function initialize(;
     properties = create_properties(graph, network_type, n_nodes, mean_degree, dispersion,
                                    patient_zero, high_contact, fraction_high_contact, trans_prob,
                                    days_to_recovered, low_risk_factor, r̂, p̂,
-                                   use_hospitalization, hospitalization_prob, days_to_hospital_recovery,
+                                   use_hospitalization, hospitalization_prob, hospitalization_day,
+                                   days_to_hospital_recovery,
                                    use_ppe_adoption, max_ppe_reduction, ppe_half_saturation)
-    rng = Xoshiro(seed)
     model = StandardABM(Person, space; agent_step!, model_step!, properties, rng)
     populate(model, high_contact, fraction_high_contact)
     set_patient_zero!(model, patient_zero)
@@ -95,7 +99,8 @@ end
 function create_properties(graph, network_type, n_nodes, mean_degree, dispersion, patient_zero,
                            high_contact, fraction_high_contact, trans_prob, days_to_recovered,
                            low_risk_factor=1.0, r̂=nothing, p̂=nothing,
-                           use_hospitalization=true, hospitalization_prob=0.1, days_to_hospital_recovery=7,
+                           use_hospitalization=true, hospitalization_prob=0.1,
+                           hospitalization_day=1, days_to_hospital_recovery=7,
                            use_ppe_adoption=false, max_ppe_reduction=0.8, ppe_half_saturation=0.02)
     low_risk_factor = clamp(low_risk_factor, 0.0, 1.0)
 
@@ -113,6 +118,7 @@ function create_properties(graph, network_type, n_nodes, mean_degree, dispersion
         :low_risk_factor => low_risk_factor,
         :use_hospitalization => use_hospitalization,
         :hospitalization_prob => hospitalization_prob,
+        :hospitalization_day => hospitalization_day,
         :days_to_hospital_recovery => days_to_hospital_recovery,
         :use_ppe_adoption => use_ppe_adoption,
         :max_ppe_reduction => max_ppe_reduction,
@@ -165,13 +171,16 @@ function populate(model::AgentBasedModel, high_contact::Symbol, fraction_high_co
         end
 
         sorted_nodes = sortperm(centrality_func(model.graph), rev=true)
-        selected_positions = sorted_nodes[1:Int(floor(fraction_high_contact * length(sorted_nodes)))]
-        for i in 1:model.n_nodes
-            if i in selected_positions
-                add_agent!(i, model, :S, 0, :high)
-            else
-                add_agent_single!(model, :S, 0, :low)
-            end
+        n_high = Int(floor(fraction_high_contact * length(sorted_nodes)))
+        selected_positions = sorted_nodes[1:n_high]
+
+        # Place high-contact agents at their hub positions FIRST so add_agent_single!
+        # for low-contact agents can only land on the remaining empty nodes.
+        for pos in selected_positions
+            add_agent!(pos, model, :S, 0, :high)
+        end
+        for _ in 1:(model.n_nodes - n_high)
+            add_agent_single!(model, :S, 0, :low)
         end
     end
 end
@@ -188,11 +197,16 @@ Set the initial infected agent in the model based on the given `patient_zero` st
 function set_patient_zero!(model::AgentBasedModel, patient_zero::Symbol)
     if patient_zero == :random
         random_agent(model).status = :I
-    elseif patient_zero == :maxdegree
-        model[argmax(degree_centrality(model.graph))].status = :I
-    elseif patient_zero == :maxbetweenness
-        model[argmax(betweenness_centrality(model.graph))].status = :I
-    elseif patient_zero == :maxeigenvector
-        model[argmax(eigenvector_centrality(model.graph))].status = :I
+        return
     end
+    node = if patient_zero == :maxdegree
+        argmax(degree_centrality(model.graph))
+    elseif patient_zero == :maxbetweenness
+        argmax(betweenness_centrality(model.graph))
+    elseif patient_zero == :maxeigenvector
+        argmax(eigenvector_centrality(model.graph))
+    else
+        error("Unknown patient_zero strategy: $patient_zero")
+    end
+    first(agents_in_position(node, model)).status = :I
 end
