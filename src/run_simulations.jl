@@ -17,9 +17,11 @@ Run simulations for an epidemiological model with different combinations of para
 - `p̂`: The p parameter for negative binomial distribution. Default is nothing.
 - `low_risk_factor::Float64`: Transmission multiplier for low-contact agents (0–1). Default is 1.0.
 - `use_hospitalization::Bool`: Whether to enable hospitalization. Default is true.
-- `use_ppe_adoption::Bool`: Whether to enable behavioral PPE adoption dynamics. Default is false.
-- `max_ppe_reduction::Float64`: Maximum fractional reduction in HCW transmission via PPE (0–1). Default is 0.8.
-- `ppe_half_saturation::Float64`: Hospitalized fraction at which PPE response reaches half its maximum. Default is 0.02.
+- `use_behavior_adoption::Bool`: Whether to enable hospitalization-driven adoption of contact-restricting behavior. Default is false.
+- `behavior_alpha::Float64`: Slope of the logistic adoption curve. Default is 300.0.
+- `behavior_beta::Float64`: Mid-point (hospitalized fraction) of the logistic adoption curve. Default is 0.0175.
+- `behavior_max_prob::Float64`: Maximum per-day adoption probability the logistic saturates to. Default is 0.3.
+- `contact_reduction::Float64`: Fraction by which an adopting agent reduces its contacts (0–1). Default is 0.5.
 - `degrees`: Degree sequence vector for `:configuration` network type. Default is nothing.
 
 # Returns
@@ -34,8 +36,9 @@ function run_simulations(; network_type::Symbol, mean_degree::Int, n_nodes::Int=
                         hospitalization_prob::Float64=0.1,
                         hospitalization_day::Int=1,
                         days_to_hospital_recovery::Int=7,
-                        use_ppe_adoption::Bool=false, max_ppe_reduction::Float64=0.8,
-                        ppe_half_saturation::Float64=0.02,
+                        use_behavior_adoption::Bool=false, behavior_alpha::Float64=300.0,
+                        behavior_beta::Float64=0.0175, behavior_max_prob::Float64=0.3,
+                        contact_reduction::Float64=0.5,
                         degrees=nothing)
     if !(0 <= low_risk_factor <= 1)
         error("low_risk_factor must be between 0 and 1, got $low_risk_factor")
@@ -57,9 +60,11 @@ function run_simulations(; network_type::Symbol, mean_degree::Int, n_nodes::Int=
         :hospitalization_prob => hospitalization_prob,
         :hospitalization_day => hospitalization_day,
         :days_to_hospital_recovery => days_to_hospital_recovery,
-        :use_ppe_adoption => use_ppe_adoption,
-        :max_ppe_reduction => max_ppe_reduction,
-        :ppe_half_saturation => ppe_half_saturation
+        :use_behavior_adoption => use_behavior_adoption,
+        :behavior_alpha => behavior_alpha,
+        :behavior_beta => behavior_beta,
+        :behavior_max_prob => behavior_max_prob,
+        :contact_reduction => contact_reduction
     )
 
     if r̂ !== nothing
@@ -68,9 +73,12 @@ function run_simulations(; network_type::Symbol, mean_degree::Int, n_nodes::Int=
     if p̂ !== nothing
         parameters[:p̂] = p̂
     end
-    if degrees !== nothing
-        parameters[:degrees] = [degrees]  # wrap so paramscan treats the whole sequence as one option
-    end
+
+    # `degrees` is a whole degree sequence (a vector), not a scalar parameter, so it must
+    # not be scanned by paramscan (which would try to store it as a column and fail).
+    # Inject it through a closure around `initialize` instead.
+    init_fn = degrees === nothing ? initialize :
+        (; kwargs...) -> initialize(; degrees=degrees, kwargs...)
 
     adata = [:status]
     if use_hospitalization
@@ -81,7 +89,7 @@ function run_simulations(; network_type::Symbol, mean_degree::Int, n_nodes::Int=
 
     _, mdf = paramscan(
         parameters,
-        initialize;
+        init_fn;
         mdata=mdata,
         n=n_steps,
         showprogress=false

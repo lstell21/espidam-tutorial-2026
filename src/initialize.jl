@@ -2,8 +2,8 @@
     initialize(; network_type, mean_degree, n_nodes, dispersion, patient_zero, high_contact,
                fraction_high_contact, trans_prob, days_to_recovered, seed, r̂, p̂, low_risk_factor,
                use_hospitalization, hospitalization_prob, days_to_hospital_recovery,
-               use_ppe_adoption, max_ppe_reduction, ppe_half_saturation, custom_graph,
-               edgelist_path, degrees)
+               use_behavior_adoption, behavior_alpha, behavior_beta, behavior_max_prob,
+               contact_reduction, custom_graph, edgelist_path, degrees)
 
 Initialize the model with specified parameters.
 
@@ -25,11 +25,13 @@ Initialize the model with specified parameters.
 - `hospitalization_prob`: Probability of hospitalization for an infected agent (rolled once, on `hospitalization_day`). Default is 0.1.
 - `hospitalization_day`: Day of infection on which the hospitalization roll is made (1 = newly infected agents may be hospitalized before their first transmission step). Default is 1.
 - `days_to_hospital_recovery`: Days until recovery from hospitalization. Default is 7.
-- `use_ppe_adoption`: Whether to enable behavioral PPE-adoption dynamics (HCW transmission is scaled down as the hospitalization burden rises). Default is false.
-- `max_ppe_reduction`: Maximum fractional reduction in HCW transmission achievable through PPE (0–1). E.g. 0.8 means PPE can cut HCW transmission by up to 80% at high hospitalization burden. Default is 0.8.
-- `ppe_half_saturation`: Hospitalized fraction at which the behavioral response reaches half of `max_ppe_reduction`. Smaller values mean HCWs react to the outbreak earlier. Default is 0.02.
+- `use_behavior_adoption`: Whether to enable hospitalization-driven adoption of contact-restricting behavior. As hospitalizations rise, agents adopt contact restriction (an absorbing state) that cuts their contacts. Default is false.
+- `behavior_alpha`: Slope of the logistic adoption curve. Larger values make the switch from low to high adoption probability sharper. Default is 300.0.
+- `behavior_beta`: Mid-point of the logistic adoption curve, expressed as a hospitalized fraction. Adoption probability reaches half of `behavior_max_prob` when the hospitalized fraction equals `behavior_beta`. Default is 0.0175.
+- `behavior_max_prob`: Maximum per-day probability that a non-adopter adopts contact-restricting behavior (the ceiling the logistic saturates to). Default is 0.3.
+- `contact_reduction`: Fraction by which an adopting agent reduces its contacts (0–1); applied per restricting endpoint of a contact. Default is 0.5 (a 50% cut).
 - `custom_graph`: A pre-loaded graph object to use instead of creating a new one. If provided, `n_nodes`/`mean_degree` are inferred from the graph; `network_type` is kept as specified by the caller. Default is nothing.
-- `edgelist_path`: Path to the edgelist file when `network_type` is `:edgelist`. Default is "degs/network".
+- `edgelist_path`: Path to the CSV edgelist file when `network_type` is `:edgelist`. Default is "degs/edgelist_n1000.csv".
 - `degrees`: Degree sequence vector for `:configuration` network type. Default is nothing.
 
 # Returns
@@ -53,11 +55,13 @@ function initialize(;
     hospitalization_prob::Float64=0.1,
     hospitalization_day::Integer=1,
     days_to_hospital_recovery::Integer=7,
-    use_ppe_adoption::Bool=false,
-    max_ppe_reduction::Float64=0.8,
-    ppe_half_saturation::Float64=0.02,
+    use_behavior_adoption::Bool=false,
+    behavior_alpha::Float64=300.0,
+    behavior_beta::Float64=0.0175,
+    behavior_max_prob::Float64=0.3,
+    contact_reduction::Float64=0.5,
     custom_graph=nothing,
-    edgelist_path::String="degs/network",
+    edgelist_path::String="degs/edgelist_n1000.csv",
     degrees=nothing
 )
     if !(0 <= low_risk_factor <= 1)
@@ -85,7 +89,8 @@ function initialize(;
                                    days_to_recovered, low_risk_factor, r̂, p̂,
                                    use_hospitalization, hospitalization_prob, hospitalization_day,
                                    days_to_hospital_recovery,
-                                   use_ppe_adoption, max_ppe_reduction, ppe_half_saturation)
+                                   use_behavior_adoption, behavior_alpha, behavior_beta,
+                                   behavior_max_prob, contact_reduction)
     model = StandardABM(Person, space; agent_step!, model_step!, properties, rng)
     populate(model, high_contact, fraction_high_contact)
     set_patient_zero!(model, patient_zero)
@@ -101,7 +106,8 @@ function create_properties(graph, network_type, n_nodes, mean_degree, dispersion
                            low_risk_factor=1.0, r̂=nothing, p̂=nothing,
                            use_hospitalization=true, hospitalization_prob=0.1,
                            hospitalization_day=1, days_to_hospital_recovery=7,
-                           use_ppe_adoption=false, max_ppe_reduction=0.8, ppe_half_saturation=0.02)
+                           use_behavior_adoption=false, behavior_alpha=300.0,
+                           behavior_beta=0.0175, behavior_max_prob=0.3, contact_reduction=0.5)
     low_risk_factor = clamp(low_risk_factor, 0.0, 1.0)
 
     properties = Dict(
@@ -120,9 +126,14 @@ function create_properties(graph, network_type, n_nodes, mean_degree, dispersion
         :hospitalization_prob => hospitalization_prob,
         :hospitalization_day => hospitalization_day,
         :days_to_hospital_recovery => days_to_hospital_recovery,
-        :use_ppe_adoption => use_ppe_adoption,
-        :max_ppe_reduction => max_ppe_reduction,
-        :ppe_half_saturation => ppe_half_saturation,
+        :use_behavior_adoption => use_behavior_adoption,
+        :behavior_alpha => behavior_alpha,
+        :behavior_beta => behavior_beta,
+        :behavior_max_prob => behavior_max_prob,
+        :contact_reduction => contact_reduction,
+        # Per-agent flag (indexed by agent id) marking adoption of contact-restricting
+        # behavior. Absorbing: once true it stays true. Reset fresh for every model.
+        :restricts_contact => falses(n_nodes),
         :susceptible_count => n_nodes,
         :infected_count => 1,
         :hospitalized_count => 0,
