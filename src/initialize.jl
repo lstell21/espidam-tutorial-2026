@@ -22,8 +22,8 @@ Initialize the model with specified parameters.
 - `p̂`: Negative binomial p parameter (for proportionate mixing). Default is nothing.
 - `low_risk_factor`: Transmission multiplier for low-contact agents (0–1). Default is 1.0.
 - `use_hospitalization`: Whether to enable hospitalization dynamics. Set to `false` for SIR, `true` (default) for SIHR.
-- `hospitalization_prob`: Probability of hospitalization for an infected agent (rolled once, on `hospitalization_day`). Default is 0.1.
-- `hospitalization_day`: Day of infection on which the hospitalization roll is made (1 = newly infected agents may be hospitalized before their first transmission step). Default is 1.
+- `hospitalization_prob`: Per-infection (not per-day) probability of hospitalization. The roll is made **once**, on day `hospitalization_day` of the agent's infection, so this is the marginal fraction of infections that end up in hospital — not a daily hazard. Default is 0.1.
+- `hospitalization_day`: Day of infection on which the single hospitalization roll happens (1 = newly infected agents may be hospitalized before their first transmission step). Default is 1.
 - `days_to_hospital_recovery`: Days until recovery from hospitalization. Default is 7.
 - `use_behavior_adoption`: Whether to enable hospitalization-driven adoption of contact-restricting behavior. As hospitalizations rise, agents adopt contact restriction (an absorbing state) that cuts their contacts. Default is false.
 - `behavior_alpha`: Slope of the logistic adoption curve. Larger values make the switch from low to high adoption probability sharper. Default is 300.0.

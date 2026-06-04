@@ -369,7 +369,7 @@ function run_and_plot_comparison(; network_types::Vector{Symbol}, mean_degree::I
         top_margin=5mm,
         title=["Epidemic Duration" "Maximum Infected" "Susceptible Fraction Remaining"],
         titlefontsize=10,
-        plot_title="Epidemic Comparison (mean degree: $(mean_degree))",
+        plot_title="Epidemic Outcomes (mean degree: $(mean_degree))",
         plot_titlefontsize=12,
         left_margin=8mm,
     )
@@ -604,7 +604,7 @@ metrics_plot = plot_network_metrics_comparison()
 # Custom comparison with two network types
 metrics_plot = plot_network_metrics_comparison(
     network_types=[:random, :preferential],
-    mean_degree=6
+    mean_degree=10
 )
 ```
 """
@@ -753,7 +753,7 @@ Plot the comparison of epidemic trajectories across different network types.
 - `save_plots`: Boolean indicating whether to save the plot as a PDF file. Default is true.
 
 # Returns
-- `p`: A plot object representing the epidemic comparison plot.
+- `p`: A plot object representing the epidemic Outcomes plot.
 
 # Example
 ```julia
@@ -764,7 +764,7 @@ function plot_epidemic_comparison(results_dict; save_plots=true)
     # Create comparison plot
     p = plot(xlabel="Time (days)", 
              ylabel="Number of agents",
-             title="SIHR Epidemic Comparison Across Network Types",
+             title="SIHR Epidemic Outcomes Across Network Types",
              legend=:outertopright,
              size=(1000, 600),
              margin=8mm)
@@ -803,7 +803,7 @@ function plot_epidemic_comparison(results_dict; save_plots=true)
     # Save plot if requested
     if save_plots
         savefig(p, "figures/epidemic_comparison_SIHR.pdf")
-        println("Epidemic comparison plot saved to figures/epidemic_comparison_SIHR.pdf")
+        println("Epidemic Outcomes plot saved to figures/epidemic_comparison_SIHR.pdf")
     end
     
     return p
