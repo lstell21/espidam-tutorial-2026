@@ -5,7 +5,7 @@ This repository contains a three-part tutorial on **network-based epidemic model
 | Notebook | Theme |
 |----------|-------|
 | **Part 1** | Synthetic networks (random, small-world, preferential attachment) + basic SIR |
-| **Part 2** | Empirical degree distributions (configuration model, proportionate mixing) and a real contact network loaded from an edgelist |
+| **Part 2** | Empirical degree distributions (configuration model, proportionate mixing) and a synthetic, community-structured contact network derived from real-world empirical data, loaded as an edgelist |
 | **Part 3** | A behavioural response (SIHR with hospitalization-driven contact restriction) and contact-rate heterogeneity (front-line workers vs general public) |
 
 Each notebook writes its outputs to its own subdirectory (`figures/part1/`, `figures/part2/`, `figures/part3/`, and similarly for `data/`), so the three can be re-run independently without clobbering each other's results.
@@ -86,7 +86,7 @@ Three new network types built from realistic contact data:
 
 - **Configuration model** — built from an empirical degree distribution (POLYMOD-like contact-survey data, available for several countries in `degs/deg_dist_<COUNTRY>.csv`).
 - **Proportionate mixing** — degrees sampled from a negative binomial distribution fitted to the same data.
-- **Edgelist** — a real synthetic contact network with community structure (1000 nodes, mean degree 10), loaded from `degs/edgelist_n1000.csv`. The network is constructed from empirical data on individuals' social ties (network size, family/friend mix, density), built by generating families first and then connecting them via friendships, which produces strong clustering.
+- **Edgelist** — a **synthetic** contact network (N = 1000, mean degree 10) **derived from real-world empirical data** on individuals' social ties (network size, family/friend mix, density), loaded from `degs/edgelist_n1000.csv`. Built by generating families first and then connecting them through friendships, which produces strong community structure and high clustering.
 
 ### Task 1: Data Preparation and Analysis
 
@@ -104,11 +104,11 @@ Three new network types built from realistic contact data:
 4. Run the proportionate mixing network with the negative-binomial parameters estimated from the data. Are the results similar to the configuration network?
 5. Vary the mean degree (and optionally the dispersion) of the negative binomial distribution and observe how this influences network structure and epidemic dynamics.
 
-### Task 3: A Real Contact Network (Edgelist)
+### Task 3: A Community-Structured Edgelist Network
 
 1. Load the edgelist network from `degs/edgelist_n1000.csv` (this happens automatically near the top of the notebook). Inspect its size, mean degree, clustering coefficient, and community structure.
 2. Run the SIR model on this network and compare its trajectory to the configuration and proportionate-mixing networks.
-3. Use the comparison plots at the bottom of the notebook (network-metrics bar chart and centrality-distribution boxplots) to characterise how the real contact network differs from the synthetic ones.
+3. Use the comparison plots at the bottom of the notebook (network-metrics bar chart and centrality-distribution boxplots) to characterise how the community-structured edgelist network differs from the degree-distribution-based configuration and proportionate-mixing networks.
 
 ---
 
