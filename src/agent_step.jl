@@ -17,8 +17,8 @@ Update the state of an agent in the ABM model for one time step.
   more hospitalizations → more adoption → fewer contacts → fewer infections.
 - If infected, increment days infected and recover if enough time has passed.
 - If infected, potentially transmit to nearby susceptibles. The base per-contact
-  transmission probability is `trans_prob` for high-contact infectors (HCWs) and
-  `trans_prob * low_risk_factor` for low-contact infectors (patients).
+  transmission probability is `trans_prob` for high-contact infectors (`contact_rate = :high`)
+  and `trans_prob * low_risk_factor` for low-contact infectors (`contact_rate = :low`).
 - A contact involves two agents, so each endpoint that restricts its contacts scales the
   transmission probability for that contact by `(1 - contact_reduction)`. This protects
   susceptible adopters as well as throttling infectious ones.
@@ -54,8 +54,8 @@ function agent_step!(person::Person, model::AgentBasedModel)
         end
 
         # Effective per-contact transmission probability for this infector. The identity
-        # gap (HCW vs patient) is fixed via low_risk_factor; an infector that restricts
-        # its contacts scales this down by (1 - contact_reduction).
+        # gap between :high and :low contact-rate agents is fixed via low_risk_factor; an
+        # infector that restricts its contacts scales this down by (1 - contact_reduction).
         trans_prob = person.contact_rate == :high ? model.trans_prob : model.trans_prob * model.low_risk_factor
         if model.use_behavior_adoption && model.restricts_contact[person.id]
             trans_prob *= (1.0 - model.contact_reduction)

@@ -56,7 +56,7 @@ plot_epidemic_trajectories(mdf, :random)
 ```
 """
 function plot_epidemic_trajectories(mdf, network_type; title_suffix="")
-    model_label = :hospitalized_count in names(mdf) ? "SIHR" : "SIR"
+    model_label = :hospitalized_count in propertynames(mdf) ? "SIHR" : "SIR"
     p = plot(mdf.time, mdf.susceptible_count, 
              label="Susceptible", 
              linewidth=2, 
@@ -74,7 +74,7 @@ function plot_epidemic_trajectories(mdf, network_type; title_suffix="")
           color=:red)
     
     # Only plot hospitalized count if it exists in the dataframe
-    if :hospitalized_count in names(mdf)
+    if :hospitalized_count in propertynames(mdf)
         plot!(p, mdf.time, mdf.hospitalized_count, 
               label="Hospitalized", 
               linewidth=2, 
@@ -380,202 +380,98 @@ end
 
 
 """
-    plot_centrality_comparison(;network_types=[:random, :smallworld, :preferential], 
-                              mean_degree=4, n_nodes=1000, link_axes=false, r̂=nothing, p̂=nothing)
+    plot_centrality_comparison(;network_types=[:random, :smallworld, :preferential],
+                              mean_degree=4, n_nodes=1000, link_axes=false, r̂=nothing, p̂=nothing,
+                              degrees=nothing, figures_dir="figures")
 
-Plot boxplots comparing centrality measures across different network types.
+Compare centrality distributions across network types. Produces a fixed 2×2 layout with
+**one panel per centrality measure** (Degree, Betweenness, Closeness, Eigenvector); within each
+panel, one box per network type. Each panel auto-scales to its own measure's range — the four
+measures have very different natural scales, so per-measure scaling is what makes the comparison
+across network types readable.
 
 # Arguments
-- `network_types`: Vector of symbols representing the network types to compare (any number supported)
+- `network_types`: Vector of symbols representing the network types to compare
 - `mean_degree`: Mean degree for network generation
 - `n_nodes`: Number of nodes in each network
-- `link_axes`: Boolean indicating whether to link y-axes across plots for easier comparison (default: false)
-- `r̂`: The r parameter for negative binomial distribution, used only when `network_type` is `:proportionatemixing`
-- `p̂`: The p parameter for negative binomial distribution, used only when `network_type` is `:proportionatemixing`
-
-# Returns
-- A combined plot showing boxplots of centrality measures for each network type
-
-# Example
-```julia
-# Default visualization with independent y-axes for three network types
-centrality_comparison = plot_centrality_comparison()
-
-# With linked y-axes for direct comparison with two network types
-centrality_comparison = plot_centrality_comparison(
-    network_types=[:random, :preferential],
-    link_axes=true
-)
-
-# With five different network types
-centrality_comparison = plot_centrality_comparison(
-    network_types=[:random, :smallworld, :preferential, :configuration, :proportionatemixing]
-)
-```
+- `link_axes`: If true, share a single y-axis across all four measure panels. Rarely useful
+  because the measures live on very different scales; defaults to false.
+- `r̂`, `p̂`: Negative-binomial params, used only when `network_type` is `:proportionatemixing`
+- `degrees`: Degree-sequence vector for `:configuration`
+- `figures_dir`: Directory to save the combined plot
 """
 function plot_centrality_comparison(;network_types=[:random, :smallworld, :preferential],
                                    mean_degree=4, n_nodes=1000, link_axes=false,
                                    r̂=nothing, p̂=nothing, degrees=nothing, figures_dir::String="figures")
-    # Initialize empty DataFrames to store the centrality data
-    centrality_data = Dict()
-    
-    # Generate and analyze each network type
+    # Generate and analyze each network type → per-network centrality DataFrame
+    centrality_data = Dict{Symbol,DataFrame}()
     for nt in network_types
-        model = initialize(; network_type=nt, mean_degree=mean_degree, n_nodes=n_nodes, r̂=r̂, p̂=p̂, degrees=degrees)
-        analysis = analyze_graph(model.graph)
-        centrality_data[nt] = analysis["centrality"]
+        model = initialize(; network_type=nt, mean_degree=mean_degree, n_nodes=n_nodes,
+                           r̂=r̂, p̂=p̂, degrees=degrees)
+        centrality_data[nt] = analyze_graph(model.graph)["centrality"]
     end
-    
-    # Determine the optimal plot layout based on the number of network types
-    n_types = length(network_types)
-    
-    if n_types == 1
-        # For a single network type, use 1x1
-        plot_layout = (1, 1)
-        plot_width = 600
-    elseif n_types == 2
-        # For two network types, use 1x2
-        plot_layout = (1, 2)
-        plot_width = 1000
-    elseif n_types <= 4
-        # For 3-4 network types, use 1xN
-        plot_layout = (1, n_types)
-        plot_width = min(1600, 500 * n_types)
-    else
-        # For more than 4 network types, use a more compact grid layout
-        n_cols = ceil(Int, sqrt(n_types))
-        n_rows = ceil(Int, n_types / n_cols)
-        plot_layout = (n_rows, n_cols)
-        plot_width = min(1800, 450 * n_cols)
+
+    # Fixed: one panel per centrality measure, network type as the within-panel grouping.
+    centrality_measures = [
+        (:degree_centrality,      "Degree"),
+        (:betweenness_centrality, "Betweenness"),
+        (:closeness_centrality,   "Closeness"),
+        (:eigenvector_centrality, "Eigenvector"),
+    ]
+    network_labels = [titlecase(String(nt)) for nt in network_types]
+
+    # Per-measure upper whisker (q3 + 1.5·IQR) across all networks, with a small buffer —
+    # gives a sensible y-limit that excludes outlier inflation.
+    function panel_ymax(col)
+        all_values = reduce(vcat, [centrality_data[nt][!, col] for nt in network_types])
+        q1 = quantile(all_values, 0.25)
+        q3 = quantile(all_values, 0.75)
+        upper_whisker = min(maximum(all_values), q3 + 1.5 * (q3 - q1))
+        return max(upper_whisker * 1.15, eps())  # avoid (0, 0) for degenerate distributions
     end
-    
-    # Fixed plot height per row
-    plot_height_per_row = 450
-    plot_height = plot_height_per_row * first(plot_layout)
-    
-    # Create plots for each centrality measure
+
     plots = []
-    
-    # Calculate y-axis limits for each network type independently
-    # This allows better visualization of the specific distributions
-    y_limits = Dict()
-    
-    for nt in network_types
-        df = centrality_data[nt]
-        
-        # Calculate quartiles for each centrality measure
-        q1_degree = quantile(df.degree_centrality, 0.25)
-        q3_degree = quantile(df.degree_centrality, 0.75)
-        iqr_degree = q3_degree - q1_degree
-        upper_whisker_degree = min(maximum(df.degree_centrality), q3_degree + 1.5 * iqr_degree)
-        
-        q1_betweenness = quantile(df.betweenness_centrality, 0.25)
-        q3_betweenness = quantile(df.betweenness_centrality, 0.75)
-        iqr_betweenness = q3_betweenness - q1_betweenness
-        upper_whisker_betweenness = min(maximum(df.betweenness_centrality), q3_betweenness + 1.5 * iqr_betweenness)
-        
-        q1_closeness = quantile(df.closeness_centrality, 0.25)
-        q3_closeness = quantile(df.closeness_centrality, 0.75)
-        iqr_closeness = q3_closeness - q1_closeness
-        upper_whisker_closeness = min(maximum(df.closeness_centrality), q3_closeness + 1.5 * iqr_closeness)
-        
-        q1_eigenvector = quantile(df.eigenvector_centrality, 0.25)
-        q3_eigenvector = quantile(df.eigenvector_centrality, 0.75)
-        iqr_eigenvector = q3_eigenvector - q1_eigenvector
-        upper_whisker_eigenvector = min(maximum(df.eigenvector_centrality), q3_eigenvector + 1.5 * iqr_eigenvector)
-        
-        # Use upper whiskers (excluding outliers) with a small buffer for y-axis limits
-        degree_max = upper_whisker_degree * 1.15
-        betweenness_max = upper_whisker_betweenness * 1.15
-        closeness_max = upper_whisker_closeness * 1.15
-        eigenvector_max = upper_whisker_eigenvector * 1.15
-        
-        # Store the maximum overall for this network type
-        y_limits[nt] = max(degree_max, betweenness_max, closeness_max, eigenvector_max)
-    end
-    
-    # If link_axes is true, find the global maximum across all networks
-    global_y_max = link_axes ? maximum(values(y_limits)) : 0
-    
-    # Create a DataFrame for each network type to use with StatsPlots groupedboxplot
-    for (i, nt) in enumerate(network_types)
-        df = centrality_data[nt]
-        network_name = titlecase(String(nt))
-        
-        # Create a DataFrame for boxplot data
-        boxplot_data = DataFrame(
-            centrality_type = vcat(
-                fill("Degree", nrow(df)),
-                fill("Betweenness", nrow(df)),
-                fill("Closeness", nrow(df)),
-                fill("Eigenvector", nrow(df))
-            ),
-            value = vcat(
-                df.degree_centrality,
-                df.betweenness_centrality,
-                df.closeness_centrality,
-                df.eigenvector_centrality
-            )
-        )
-        
-        # Convert centrality_type to a categorical array with ordered levels
-        boxplot_data.centrality_type = CategoricalArray(
-            boxplot_data.centrality_type, 
-            ordered=true, 
-            levels=["Degree", "Betweenness", "Closeness", "Eigenvector"]
-        )
-        
-        # Set y-axis limits based on link_axes parameter
-        y_max = link_axes ? global_y_max : y_limits[nt]
-        
-        # Create a more precisely aligned boxplot using @df macro
-        p = @df boxplot_data boxplot(
-            :centrality_type, 
-            :value,
-            title=network_name,
+    for (col, measure_name) in centrality_measures
+        df_long = DataFrame(network=String[], value=Float64[])
+        for (nt, label) in zip(network_types, network_labels)
+            for v in centrality_data[nt][!, col]
+                push!(df_long, (label, v))
+            end
+        end
+        df_long.network = CategoricalArray(df_long.network; ordered=true, levels=network_labels)
+
+        p = @df df_long boxplot(:network, :value;
+            title=measure_name,
             legend=false,
-            outliers=false,  # Hide outliers to improve readability
-            marker=(0.5, :circle, 0.3),
-            alpha=0.7,       
+            outliers=false,
+            ylabel="Centrality value",
+            ylims=(0, panel_ymax(col)),
+            xrotation=30,
+            bar_width=0.7,
             guidefontsize=9,
-            titlefontsize=10,
-            widen=true,      
-            bar_width=0.7,   
-            xticks=([1,2,3,4], ["Degree", "Betweenness", "Closeness", "Eigenvector"]),
-            xrotation=30,    
-            ylims=(0, y_max),
-            ylabel="Centrality Value",
-            dpi=300,
-            margin=8mm,      # Add individual plot margins for better spacing
-            bottom_margin=10mm,  # Add extra space at the bottom for x-axis labels
-            left_margin=8mm      # Add extra space for y-axis labels
-        )
-        
+            titlefontsize=11,
+            margin=6mm,
+            bottom_margin=10mm,
+            left_margin=8mm,
+            dpi=300)
         push!(plots, p)
     end
-    
-    # Handle case where we might have more layout slots than plots
-    if length(plots) < prod(plot_layout)
-        # Fill remaining slots with empty plots
-        for i in length(plots)+1:prod(plot_layout)
-            push!(plots, plot(framestyle=:none, grid=false, showaxis=false))
-        end
-    end
-    
-    # Combine plots in a single figure with improved margins
-    combined_plot = plot(plots..., 
-                      layout=plot_layout, 
-                      size=(plot_width, plot_height),
-                      bottom_margin=12mm, # Increase bottom margin for x-axis labels
-                      top_margin=10mm,    # Add more top margin for titles
-                      xtickfontsize=9,
-                      link=link_axes ? :y : :none,
-                      title_position=:center)
-    
+
+    combined_plot = plot(plots...,
+        layout=(2, 2),
+        size=(1100, 750),
+        plot_title="Centrality Comparison Across Network Types",
+        plot_titlefontsize=12,
+        bottom_margin=12mm,
+        top_margin=10mm,
+        xtickfontsize=9,
+        link=link_axes ? :y : :none,
+        title_position=:center)
+
     net_types_str = join([String(nt) for nt in network_types], "_")
     mkpath(figures_dir)
     savefig(combined_plot, joinpath(figures_dir, "centrality_comparison_$(net_types_str)_mdeg_$(mean_degree).pdf"))
-    
+
     return combined_plot
 end
 
@@ -712,14 +608,22 @@ function plot_network_metrics_comparison(;network_types=[:random, :smallworld, :
 
     # Reshape for plotting
     df_long = stack(df, Not(["metric", "position"]), variable_name = "Model", value_name = "Value")
-    
+
     # Convert Model to a categorical variable with ordered levels to preserve the order
     # from the network_types argument
     df_long.Model = CategoricalArray(df_long.Model, ordered=true, levels=network_labels)
 
+    # Data-driven y-limits that *also* show negative values (assortativity can be negative
+    # for scale-free networks). Always include 0 as the bar baseline, and add ~10% padding
+    # on the dominant side so bars don't crowd the frame.
+    data_min, data_max = extrema(df_long.Value)
+    pad = 0.1 * max(data_max - data_min, eps())
+    y_lower = min(0.0, data_min - pad)
+    y_upper = data_max + pad
+
     # Create grouped bar plot with improved spacing and margins
     metrics_plot = @df df_long groupedbar(
-        :metric, 
+        :metric,
         :Value,
         group = :Model,
         bar_position = :dodge,
@@ -728,7 +632,7 @@ function plot_network_metrics_comparison(;network_types=[:random, :smallworld, :
         title = "Network Metrics by Model Type",
         legend = :topright,
         size = (900, 550),
-        ylims = (-0.15, 0.6),
+        ylims = (y_lower, y_upper),
         left_margin = 5mm,
         top_margin = 5mm,
         bottom_margin = 15mm,
