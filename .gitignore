@@ -24,6 +24,8 @@ docs/site/
 # Excel files
 *.xlsx
 *.csv
+!degs/deg_dist_DE.csv
+!degs/edgelist_n1000.csv
 
 # PDF files
 *.pdf

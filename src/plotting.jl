@@ -56,14 +56,14 @@ plot_epidemic_trajectories(mdf, :random)
 ```
 """
 function plot_epidemic_trajectories(mdf, network_type; title_suffix="")
-    # Create the plot
+    model_label = :hospitalized_count in propertynames(mdf) ? "SIHR" : "SIR"
     p = plot(mdf.time, mdf.susceptible_count, 
              label="Susceptible", 
              linewidth=2, 
              color=:blue,
              xlabel="Time (days)", 
              ylabel="Number of agents",
-             title="SIHR Epidemic Dynamics - $(titlecase(string(network_type))) Network$(title_suffix)",
+             title="$(model_label) Epidemic Dynamics - $(titlecase(string(network_type))) Network$(title_suffix)",
              legend=:right,
              size=(800, 500),
              margin=5mm)
@@ -74,7 +74,7 @@ function plot_epidemic_trajectories(mdf, network_type; title_suffix="")
           color=:red)
     
     # Only plot hospitalized count if it exists in the dataframe
-    if :hospitalized_count in names(mdf)
+    if :hospitalized_count in propertynames(mdf)
         plot!(p, mdf.time, mdf.hospitalized_count, 
               label="Hospitalized", 
               linewidth=2, 
@@ -96,14 +96,13 @@ end
 Create a consistent base filename from model parameters for saving files.
 """
 function create_base_filename(model)
-    # low_risk_factor is guaranteed to be between 0 and 1
-    return "$(model.network_type)_mdeg_$(model.mean_degree)_nn_$(model.n_nodes)_disp_$(model.dispersion)_pat0_$(model.patient_zero)_hirisk_$(model.high_risk)_hr_frac_$(model.fraction_high_risk)_low_risk_factor_$(model.low_risk_factor)_trans_$(model.trans_prob)"
+    return "$(model.network_type)_mdeg_$(model.mean_degree)_nn_$(model.n_nodes)_disp_$(model.dispersion)_pat0_$(model.patient_zero)_hicontact_$(model.high_contact)_hc_frac_$(model.fraction_high_contact)_lrf_$(model.low_risk_factor)_trans_$(model.trans_prob)"
 end
 
 """
     plot_single_run(; network_type::Symbol, mean_degree::Int=4, n_nodes::Int=1000, 
                    dispersion::Float64=0.1, patient_zero::Symbol=:random, 
-                   high_risk::Symbol=:random, fraction_high_risk::Float64=0.1, 
+                   high_contact::Symbol=:random, fraction_high_contact::Float64=0.1, 
                    low_risk_factor::Float64=1.0, trans_prob::Float64=0.1, n_steps::Int=100, r̂=nothing, p̂=nothing)
 
 Plot a single run of an epidemic simulation.
@@ -114,13 +113,14 @@ Plot a single run of an epidemic simulation.
 - `n_nodes::Int`: The number of nodes in the network. Default is 1000.
 - `dispersion::Float64`: The dispersion parameter for the network. Default is 0.1.
 - `patient_zero::Symbol`: The type of patient zero to use for the simulation. Default is `:random`.
-- `high_risk::Symbol`: How high-risk individuals are distributed. Default is `:random`.
-- `fraction_high_risk::Float64`: The fraction of high-risk individuals in the population. Default is 1.0.
+- `high_contact::Symbol`: How high-risk individuals are distributed. Default is `:random`.
+- `fraction_high_contact::Float64`: The fraction of high-risk individuals in the population. Default is 1.0.
 - `low_risk_factor::Float64`: The factor by which low-risk individuals' transmission probability is multiplied. Must be between 0 and 1. Default is 1.0.
 - `trans_prob::Float64`: The transmission probability. Default is 0.1.
 - `n_steps::Int`: The number of simulation steps to run. Default is 100.
 - `r̂`: The r parameter for negative binomial distribution, used only when `network_type` is `:proportionatemixing`. Default is nothing.
 - `p̂`: The p parameter for negative binomial distribution, used only when `network_type` is `:proportionatemixing`. Default is nothing.
+- `degrees`: Degree sequence vector for `:configuration` network type. Default is nothing.
 
 # Returns
 - `plotdynamics`: A plot of the epidemic trajectories.
@@ -132,22 +132,27 @@ Plot a single run of an epidemic simulation.
 dynamics_plot, degdist_plot, combined_plot = plot_single_run(network_type=:random, mean_degree=2)
 ```
 """
-function plot_single_run(; network_type::Symbol, mean_degree::Int=4, n_nodes::Int=1000, 
-                       dispersion::Float64=0.1, patient_zero::Symbol=:random, 
-                       high_risk::Symbol=:random, fraction_high_risk::Float64=1.0, 
-                       low_risk_factor::Float64=1.0, trans_prob::Float64=0.1, n_steps::Int=100, r̂=nothing, p̂=nothing)
+function plot_single_run(; network_type::Symbol, mean_degree::Int=4, n_nodes::Int=1000,
+                       dispersion::Float64=0.1, patient_zero::Symbol=:random,
+                       high_contact::Symbol=:random, fraction_high_contact::Float64=1.0,
+                       low_risk_factor::Float64=1.0, trans_prob::Float64=0.1, n_steps::Int=100,
+                       r̂=nothing, p̂=nothing, use_hospitalization::Bool=true, degrees=nothing,
+                       figures_dir::String="figures")
     # Validate low_risk_factor
     if !(0 <= low_risk_factor <= 1)
         error("low_risk_factor must be between 0 and 1, got $low_risk_factor")
     end
-    
+
     # Initialize model and run simulation
-    model = initialize(; network_type, mean_degree, n_nodes, dispersion, patient_zero, 
-                     high_risk, fraction_high_risk, low_risk_factor, trans_prob, r̂, p̂)
-    
+    model = initialize(; network_type, mean_degree, n_nodes, dispersion, patient_zero,
+                     high_contact, fraction_high_contact, low_risk_factor, trans_prob, r̂, p̂,
+                     use_hospitalization, degrees)
+
     # Define adata and mdata locally to avoid relying on global variables
     adata = [:status]
-    mdata = [:susceptible_count, :infected_count, :hospitalized_count, :recovered_count]
+    mdata = use_hospitalization ?
+        [:susceptible_count, :infected_count, :hospitalized_count, :recovered_count] :
+        [:susceptible_count, :infected_count, :recovered_count]
     
     # Run the simulation
     _, mdf = run!(model, n_steps; adata, mdata)
@@ -165,7 +170,8 @@ function plot_single_run(; network_type::Symbol, mean_degree::Int=4, n_nodes::In
     # Create a combined plot for side-by-side visualization
     combined_plot = plot(plotdynamics, plotdegdist, layout=(1,2), size=(1000, 400), margin=5mm,
                        title=["Epidemic Dynamics ($(String(model.network_type)))" "Degree Distribution ($(String(model.network_type)))"])
-    savefig(combined_plot, "figures/combined_plot_$(base_filename).pdf")
+    mkpath(figures_dir)
+    savefig(combined_plot, joinpath(figures_dir, "combined_plot_$(base_filename).pdf"))
     
     # Return all three plots
     return plotdynamics, plotdegdist, combined_plot
@@ -223,17 +229,20 @@ end
 """
     run_and_plot_comparison(; network_types::Vector{Symbol}, mean_degree::Int=4, 
                           n_nodes::Int=1000, dispersion::Float64=0.1, 
-                          patient_zero::Symbol=:random, high_risk::Symbol=:random, 
-                          fraction_high_risk::Float64=1.0, low_risk_factor::Float64=1.0,
+                          patient_zero::Symbol=:random, high_contact::Symbol=:random, 
+                          fraction_high_contact::Float64=1.0, low_risk_factor::Float64=1.0,
                           trans_prob::Float64=0.1, n_steps::Int=100, boxplot_colors=nothing, r̂=nothing, p̂=nothing)
 
 Run simulations for multiple network types and generate comparison plots.
 """
-function run_and_plot_comparison(; network_types::Vector{Symbol}, mean_degree::Int=4, 
-                               n_nodes::Int=1000, dispersion::Float64=0.1, 
-                               patient_zero::Symbol=:random, high_risk::Symbol=:random, 
-                               fraction_high_risk::Float64=1.0, low_risk_factor::Float64=1.0,
-                               trans_prob::Float64=0.1, n_steps::Int=100, boxplot_colors=nothing, r̂=nothing, p̂=nothing, use_hospitalization::Bool=true)
+function run_and_plot_comparison(; network_types::Vector{Symbol}, mean_degree::Int=4,
+                               n_nodes::Int=1000, dispersion::Float64=0.1,
+                               patient_zero::Symbol=:random, high_contact::Symbol=:random,
+                               fraction_high_contact::Float64=1.0, low_risk_factor::Float64=1.0,
+                               trans_prob::Float64=0.1, n_steps::Int=100, boxplot_colors=nothing,
+                               r̂=nothing, p̂=nothing, use_hospitalization::Bool=false,
+                               degrees=nothing, figures_dir::String="figures", data_dir::String="data",
+                               output_dir_path::String="output", save_data::Bool=false)
     # Validate low_risk_factor
     if !(0 <= low_risk_factor <= 1)
         error("low_risk_factor must be between 0 and 1, got $low_risk_factor")
@@ -251,12 +260,14 @@ function run_and_plot_comparison(; network_types::Vector{Symbol}, mean_degree::I
     for network_type in network_types
         println("Running simulations for $(network_type) network...")
         model = initialize(; network_type, mean_degree, n_nodes, dispersion, patient_zero, 
-                          high_risk, fraction_high_risk, low_risk_factor, trans_prob, r̂, p̂)
+                          high_contact, fraction_high_contact, low_risk_factor, trans_prob, r̂, p̂,
+                          degrees=degrees)
         
         # Run simulations
         multiple_runs = run_simulations(; network_type, mean_degree, n_nodes, dispersion, 
-                                       patient_zero, high_risk, fraction_high_risk, 
-                                       low_risk_factor, trans_prob, n_steps, r̂, p̂, use_hospitalization)
+                                       patient_zero, high_contact, fraction_high_contact, 
+                                       low_risk_factor, trans_prob, n_steps, r̂, p̂, use_hospitalization,
+                                       degrees=degrees)
         
         # Process results
         grouped_data = groupby(multiple_runs, [:seed])
@@ -289,12 +300,13 @@ function run_and_plot_comparison(; network_types::Vector{Symbol}, mean_degree::I
         final_results[!, :susceptible_fraction_remaining] = last_rows.susceptible_count_last ./ 
             (last_rows.susceptible_count_last + last_rows.infected_count_last + last_rows.recovered_count_last)
         
-        # Save results
-        base_filename = "$(network_type)_mdeg_$(mean_degree)_nn_$(n_nodes)_disp_$(dispersion)_pat0_$(patient_zero)_hirisk_$(high_risk)_hr_frac_$(fraction_high_risk)_low_risk_factor_$(low_risk_factor)_trans_$(trans_prob)"
-        println("Saving simulation results to data/simulation_results...")
-        CSV.write("data/simulation_results_$(base_filename).csv", multiple_runs)
-        println("Saving final results to output/final_results...")
-        CSV.write("output/final_results_$(base_filename).csv", final_results)
+        if save_data
+            base_filename = "$(network_type)_mdeg_$(mean_degree)_nn_$(n_nodes)_disp_$(dispersion)_pat0_$(patient_zero)_hicontact_$(high_contact)_hc_frac_$(fraction_high_contact)_lrf_$(low_risk_factor)_trans_$(trans_prob)"
+            mkpath(data_dir)
+            mkpath(output_dir_path)
+            CSV.write(joinpath(data_dir, "simulation_results_$(base_filename).csv"), multiple_runs)
+            CSV.write(joinpath(output_dir_path, "final_results_$(base_filename).csv"), final_results)
+        end
         
         # Store results for box plots
         all_results[network_type] = final_results
@@ -318,34 +330,36 @@ function run_and_plot_comparison(; network_types::Vector{Symbol}, mean_degree::I
     network_order = [titlecase(String(nt)) for nt in network_types]
     
     # Generate comparison plots using the pre-formatted data and colors
+    mkpath(figures_dir)
+    net_types_str = join([String(nt) for nt in network_types], "_")
+
     duration_comparison = create_comparison_box_plot(
         duration_data,
         "Epidemic Duration Comparison\n(mean degree: $(mean_degree))",
         "Duration (steps)",
-        filename="figures/duration_comparison_mdeg_$(mean_degree).pdf",
+        filename=joinpath(figures_dir, "duration_comparison_$(net_types_str)_mdeg_$(mean_degree).pdf"),
         colors=boxplot_colors,
         network_order=network_order
     )
-    
+
     max_infected_comparison = create_comparison_box_plot(
         max_infected_data,
         "Maximum Infected Comparison\n(mean degree: $(mean_degree))",
         "Maximum Number of Infected",
-        filename="figures/max_infected_comparison_mdeg_$(mean_degree).pdf",
+        filename=joinpath(figures_dir, "max_infected_comparison_$(net_types_str)_mdeg_$(mean_degree).pdf"),
         colors=boxplot_colors,
         network_order=network_order
     )
-    
+
     sfr_comparison = create_comparison_box_plot(
         susceptible_remaining_data,
         "Susceptible Fraction Remaining Comparison\n(mean degree: $(mean_degree))",
         "Susceptible Fraction Remaining",
-        filename="figures/sfr_comparison_mdeg_$(mean_degree).pdf",
+        filename=joinpath(figures_dir, "sfr_comparison_$(net_types_str)_mdeg_$(mean_degree).pdf"),
         colors=boxplot_colors,
         network_order=network_order
     )
-    
-    # Create combined comparison plot
+
     combined_comparison = plot(
         duration_comparison, max_infected_comparison, sfr_comparison,
         layout=(1,3),
@@ -355,215 +369,109 @@ function run_and_plot_comparison(; network_types::Vector{Symbol}, mean_degree::I
         top_margin=5mm,
         title=["Epidemic Duration" "Maximum Infected" "Susceptible Fraction Remaining"],
         titlefontsize=10,
-        plot_title="Epidemic Comparison (mean degree: $(mean_degree))", 
+        plot_title="Epidemic Outcomes (mean degree: $(mean_degree))",
         plot_titlefontsize=12,
         left_margin=8mm,
     )
-    println("Saving combined comparison plot to figures/combined_comparison_mdeg_$(mean_degree).pdf")
-    savefig(combined_comparison, "figures/combined_comparison_mdeg_$(mean_degree).pdf")
+    savefig(combined_comparison, joinpath(figures_dir, "combined_comparison_$(net_types_str)_mdeg_$(mean_degree).pdf"))
     
     return combined_comparison
 end
 
 
 """
-    plot_centrality_comparison(;network_types=[:random, :smallworld, :preferential], 
-                              mean_degree=4, n_nodes=1000, link_axes=false, r̂=nothing, p̂=nothing)
+    plot_centrality_comparison(;network_types=[:random, :smallworld, :preferential],
+                              mean_degree=4, n_nodes=1000, link_axes=false, r̂=nothing, p̂=nothing,
+                              degrees=nothing, figures_dir="figures")
 
-Plot boxplots comparing centrality measures across different network types.
+Compare centrality distributions across network types. Produces a fixed 2×2 layout with
+**one panel per centrality measure** (Degree, Betweenness, Closeness, Eigenvector); within each
+panel, one box per network type. Each panel auto-scales to its own measure's range — the four
+measures have very different natural scales, so per-measure scaling is what makes the comparison
+across network types readable.
 
 # Arguments
-- `network_types`: Vector of symbols representing the network types to compare (any number supported)
+- `network_types`: Vector of symbols representing the network types to compare
 - `mean_degree`: Mean degree for network generation
 - `n_nodes`: Number of nodes in each network
-- `link_axes`: Boolean indicating whether to link y-axes across plots for easier comparison (default: false)
-- `r̂`: The r parameter for negative binomial distribution, used only when `network_type` is `:proportionatemixing`
-- `p̂`: The p parameter for negative binomial distribution, used only when `network_type` is `:proportionatemixing`
-
-# Returns
-- A combined plot showing boxplots of centrality measures for each network type
-
-# Example
-```julia
-# Default visualization with independent y-axes for three network types
-centrality_comparison = plot_centrality_comparison()
-
-# With linked y-axes for direct comparison with two network types
-centrality_comparison = plot_centrality_comparison(
-    network_types=[:random, :preferential],
-    link_axes=true
-)
-
-# With five different network types
-centrality_comparison = plot_centrality_comparison(
-    network_types=[:random, :smallworld, :preferential, :configuration, :proportionatemixing]
-)
-```
+- `link_axes`: If true, share a single y-axis across all four measure panels. Rarely useful
+  because the measures live on very different scales; defaults to false.
+- `r̂`, `p̂`: Negative-binomial params, used only when `network_type` is `:proportionatemixing`
+- `degrees`: Degree-sequence vector for `:configuration`
+- `figures_dir`: Directory to save the combined plot
 """
-function plot_centrality_comparison(;network_types=[:random, :smallworld, :preferential], 
-                                   mean_degree=4, n_nodes=1000, link_axes=false, 
-                                   r̂=nothing, p̂=nothing)
-    # Initialize empty DataFrames to store the centrality data
-    centrality_data = Dict()
-    
-    # Generate and analyze each network type
+function plot_centrality_comparison(;network_types=[:random, :smallworld, :preferential],
+                                   mean_degree=4, n_nodes=1000, link_axes=false,
+                                   r̂=nothing, p̂=nothing, degrees=nothing, figures_dir::String="figures")
+    # Generate and analyze each network type → per-network centrality DataFrame
+    centrality_data = Dict{Symbol,DataFrame}()
     for nt in network_types
-        model = initialize(; network_type=nt, mean_degree=mean_degree, n_nodes=n_nodes, r̂=r̂, p̂=p̂)
-        analysis = analyze_graph(model.graph)
-        centrality_data[nt] = analysis["centrality"]
+        model = initialize(; network_type=nt, mean_degree=mean_degree, n_nodes=n_nodes,
+                           r̂=r̂, p̂=p̂, degrees=degrees)
+        centrality_data[nt] = analyze_graph(model.graph)["centrality"]
     end
-    
-    # Determine the optimal plot layout based on the number of network types
-    n_types = length(network_types)
-    
-    if n_types == 1
-        # For a single network type, use 1x1
-        plot_layout = (1, 1)
-        plot_width = 600
-    elseif n_types == 2
-        # For two network types, use 1x2
-        plot_layout = (1, 2)
-        plot_width = 1000
-    elseif n_types <= 4
-        # For 3-4 network types, use 1xN
-        plot_layout = (1, n_types)
-        plot_width = min(1600, 500 * n_types)
-    else
-        # For more than 4 network types, use a more compact grid layout
-        n_cols = ceil(Int, sqrt(n_types))
-        n_rows = ceil(Int, n_types / n_cols)
-        plot_layout = (n_rows, n_cols)
-        plot_width = min(1800, 450 * n_cols)
+
+    # Fixed: one panel per centrality measure, network type as the within-panel grouping.
+    centrality_measures = [
+        (:degree_centrality,      "Degree"),
+        (:betweenness_centrality, "Betweenness"),
+        (:closeness_centrality,   "Closeness"),
+        (:eigenvector_centrality, "Eigenvector"),
+    ]
+    network_labels = [titlecase(String(nt)) for nt in network_types]
+
+    # Per-measure upper whisker (q3 + 1.5·IQR) across all networks, with a small buffer —
+    # gives a sensible y-limit that excludes outlier inflation.
+    function panel_ymax(col)
+        all_values = reduce(vcat, [centrality_data[nt][!, col] for nt in network_types])
+        q1 = quantile(all_values, 0.25)
+        q3 = quantile(all_values, 0.75)
+        upper_whisker = min(maximum(all_values), q3 + 1.5 * (q3 - q1))
+        return max(upper_whisker * 1.15, eps())  # avoid (0, 0) for degenerate distributions
     end
-    
-    # Fixed plot height per row
-    plot_height_per_row = 450
-    plot_height = plot_height_per_row * first(plot_layout)
-    
-    # Create plots for each centrality measure
+
     plots = []
-    
-    # Calculate y-axis limits for each network type independently
-    # This allows better visualization of the specific distributions
-    y_limits = Dict()
-    
-    for nt in network_types
-        df = centrality_data[nt]
-        
-        # Calculate quartiles for each centrality measure
-        q1_degree = quantile(df.degree_centrality, 0.25)
-        q3_degree = quantile(df.degree_centrality, 0.75)
-        iqr_degree = q3_degree - q1_degree
-        upper_whisker_degree = min(maximum(df.degree_centrality), q3_degree + 1.5 * iqr_degree)
-        
-        q1_betweenness = quantile(df.betweenness_centrality, 0.25)
-        q3_betweenness = quantile(df.betweenness_centrality, 0.75)
-        iqr_betweenness = q3_betweenness - q1_betweenness
-        upper_whisker_betweenness = min(maximum(df.betweenness_centrality), q3_betweenness + 1.5 * iqr_betweenness)
-        
-        q1_closeness = quantile(df.closeness_centrality, 0.25)
-        q3_closeness = quantile(df.closeness_centrality, 0.75)
-        iqr_closeness = q3_closeness - q1_closeness
-        upper_whisker_closeness = min(maximum(df.closeness_centrality), q3_closeness + 1.5 * iqr_closeness)
-        
-        q1_eigenvector = quantile(df.eigenvector_centrality, 0.25)
-        q3_eigenvector = quantile(df.eigenvector_centrality, 0.75)
-        iqr_eigenvector = q3_eigenvector - q1_eigenvector
-        upper_whisker_eigenvector = min(maximum(df.eigenvector_centrality), q3_eigenvector + 1.5 * iqr_eigenvector)
-        
-        # Use upper whiskers (excluding outliers) with a small buffer for y-axis limits
-        degree_max = upper_whisker_degree * 1.15
-        betweenness_max = upper_whisker_betweenness * 1.15
-        closeness_max = upper_whisker_closeness * 1.15
-        eigenvector_max = upper_whisker_eigenvector * 1.15
-        
-        # Store the maximum overall for this network type
-        y_limits[nt] = max(degree_max, betweenness_max, closeness_max, eigenvector_max)
-    end
-    
-    # If link_axes is true, find the global maximum across all networks
-    global_y_max = link_axes ? maximum(values(y_limits)) : 0
-    
-    # Create a DataFrame for each network type to use with StatsPlots groupedboxplot
-    for (i, nt) in enumerate(network_types)
-        df = centrality_data[nt]
-        network_name = titlecase(String(nt))
-        
-        # Create a DataFrame for boxplot data
-        boxplot_data = DataFrame(
-            centrality_type = vcat(
-                fill("Degree", nrow(df)),
-                fill("Betweenness", nrow(df)),
-                fill("Closeness", nrow(df)),
-                fill("Eigenvector", nrow(df))
-            ),
-            value = vcat(
-                df.degree_centrality,
-                df.betweenness_centrality,
-                df.closeness_centrality,
-                df.eigenvector_centrality
-            )
-        )
-        
-        # Convert centrality_type to a categorical array with ordered levels
-        boxplot_data.centrality_type = CategoricalArray(
-            boxplot_data.centrality_type, 
-            ordered=true, 
-            levels=["Degree", "Betweenness", "Closeness", "Eigenvector"]
-        )
-        
-        # Set y-axis limits based on link_axes parameter
-        y_max = link_axes ? global_y_max : y_limits[nt]
-        
-        # Create a more precisely aligned boxplot using @df macro
-        p = @df boxplot_data boxplot(
-            :centrality_type, 
-            :value,
-            title=network_name,
+    for (col, measure_name) in centrality_measures
+        df_long = DataFrame(network=String[], value=Float64[])
+        for (nt, label) in zip(network_types, network_labels)
+            for v in centrality_data[nt][!, col]
+                push!(df_long, (label, v))
+            end
+        end
+        df_long.network = CategoricalArray(df_long.network; ordered=true, levels=network_labels)
+
+        p = @df df_long boxplot(:network, :value;
+            title=measure_name,
             legend=false,
-            outliers=false,  # Hide outliers to improve readability
-            marker=(0.5, :circle, 0.3),
-            alpha=0.7,       
+            outliers=false,
+            ylabel="Centrality value",
+            ylims=(0, panel_ymax(col)),
+            xrotation=30,
+            bar_width=0.7,
             guidefontsize=9,
-            titlefontsize=10,
-            widen=true,      
-            bar_width=0.7,   
-            xticks=([1,2,3,4], ["Degree", "Betweenness", "Closeness", "Eigenvector"]),
-            xrotation=30,    
-            ylims=(0, y_max),
-            ylabel="Centrality Value",
-            dpi=300,
-            margin=8mm,      # Add individual plot margins for better spacing
-            bottom_margin=10mm,  # Add extra space at the bottom for x-axis labels
-            left_margin=8mm      # Add extra space for y-axis labels
-        )
-        
+            titlefontsize=11,
+            margin=6mm,
+            bottom_margin=10mm,
+            left_margin=8mm,
+            dpi=300)
         push!(plots, p)
     end
-    
-    # Handle case where we might have more layout slots than plots
-    if length(plots) < prod(plot_layout)
-        # Fill remaining slots with empty plots
-        for i in length(plots)+1:prod(plot_layout)
-            push!(plots, plot(framestyle=:none, grid=false, showaxis=false))
-        end
-    end
-    
-    # Combine plots in a single figure with improved margins
-    combined_plot = plot(plots..., 
-                      layout=plot_layout, 
-                      size=(plot_width, plot_height),
-                      bottom_margin=12mm, # Increase bottom margin for x-axis labels
-                      top_margin=10mm,    # Add more top margin for titles
-                      xtickfontsize=9,
-                      link=link_axes ? :y : :none,
-                      title_position=:center)
-    
-    # Save the figure
+
+    combined_plot = plot(plots...,
+        layout=(2, 2),
+        size=(1100, 750),
+        plot_title="Centrality Comparison Across Network Types",
+        plot_titlefontsize=12,
+        bottom_margin=12mm,
+        top_margin=10mm,
+        xtickfontsize=9,
+        link=link_axes ? :y : :none,
+        title_position=:center)
+
     net_types_str = join([String(nt) for nt in network_types], "_")
-    println("Saving combined centrality comparison plot to figures/centrality_comparison_$(net_types_str)_mdeg_$(mean_degree).pdf")
-    savefig(combined_plot, "figures/centrality_comparison_$(net_types_str)_mdeg_$(mean_degree).pdf")
-    
+    mkpath(figures_dir)
+    savefig(combined_plot, joinpath(figures_dir, "centrality_comparison_$(net_types_str)_mdeg_$(mean_degree).pdf"))
+
     return combined_plot
 end
 
@@ -592,12 +500,13 @@ metrics_plot = plot_network_metrics_comparison()
 # Custom comparison with two network types
 metrics_plot = plot_network_metrics_comparison(
     network_types=[:random, :preferential],
-    mean_degree=6
+    mean_degree=10
 )
 ```
 """
-function plot_network_metrics_comparison(;network_types=[:random, :smallworld, :preferential], 
-                                       mean_degree=4, n_nodes=1000, r̂=nothing, p̂=nothing)
+function plot_network_metrics_comparison(;network_types=[:random, :smallworld, :preferential],
+                                       mean_degree=4, n_nodes=1000, r̂=nothing, p̂=nothing,
+                                       degrees=nothing, figures_dir::String="figures")
     # Define a colorblind-friendly palette for the five network types
     # Using a modified version of Wong's palette which is colorblind-friendly
     network_color_map = Dict(
@@ -625,7 +534,7 @@ function plot_network_metrics_comparison(;network_types=[:random, :smallworld, :
     # Collect metrics for each network type
     for nt in network_types
         println("Analyzing $(nt) network...")
-        model = initialize(; network_type=nt, mean_degree=mean_degree, n_nodes=n_nodes, r̂=r̂, p̂=p̂)
+        model = initialize(; network_type=nt, mean_degree=mean_degree, n_nodes=n_nodes, r̂=r̂, p̂=p̂, degrees=degrees)
         analysis = analyze_graph(model.graph)
         
         # Extract key metrics
@@ -699,14 +608,22 @@ function plot_network_metrics_comparison(;network_types=[:random, :smallworld, :
 
     # Reshape for plotting
     df_long = stack(df, Not(["metric", "position"]), variable_name = "Model", value_name = "Value")
-    
+
     # Convert Model to a categorical variable with ordered levels to preserve the order
     # from the network_types argument
     df_long.Model = CategoricalArray(df_long.Model, ordered=true, levels=network_labels)
 
+    # Data-driven y-limits that *also* show negative values (assortativity can be negative
+    # for scale-free networks). Always include 0 as the bar baseline, and add ~10% padding
+    # on the dominant side so bars don't crowd the frame.
+    data_min, data_max = extrema(df_long.Value)
+    pad = 0.1 * max(data_max - data_min, eps())
+    y_lower = min(0.0, data_min - pad)
+    y_upper = data_max + pad
+
     # Create grouped bar plot with improved spacing and margins
     metrics_plot = @df df_long groupedbar(
-        :metric, 
+        :metric,
         :Value,
         group = :Model,
         bar_position = :dodge,
@@ -715,7 +632,7 @@ function plot_network_metrics_comparison(;network_types=[:random, :smallworld, :
         title = "Network Metrics by Model Type",
         legend = :topright,
         size = (900, 550),
-        ylims = (-0.15, 0.6),
+        ylims = (y_lower, y_upper),
         left_margin = 5mm,
         top_margin = 5mm,
         bottom_margin = 15mm,
@@ -723,10 +640,9 @@ function plot_network_metrics_comparison(;network_types=[:random, :smallworld, :
         palette = network_colors  # Use our defined colors
     )
 
-    # Save the plot
     network_types_str = join([String(nt) for nt in network_types], "_")
-    println("Saving network metrics comparison plot to figures/network_metrics_comparison_$(network_types_str)_mdeg_$(mean_degree).pdf")
-    savefig(metrics_plot, "figures/network_metrics_comparison_$(network_types_str)_mdeg_$(mean_degree).pdf")
+    mkpath(figures_dir)
+    savefig(metrics_plot, joinpath(figures_dir, "network_metrics_comparison_$(network_types_str)_mdeg_$(mean_degree).pdf"))
 
     return metrics_plot
 end
@@ -741,7 +657,7 @@ Plot the comparison of epidemic trajectories across different network types.
 - `save_plots`: Boolean indicating whether to save the plot as a PDF file. Default is true.
 
 # Returns
-- `p`: A plot object representing the epidemic comparison plot.
+- `p`: A plot object representing the epidemic Outcomes plot.
 
 # Example
 ```julia
@@ -752,7 +668,7 @@ function plot_epidemic_comparison(results_dict; save_plots=true)
     # Create comparison plot
     p = plot(xlabel="Time (days)", 
              ylabel="Number of agents",
-             title="SIHR Epidemic Comparison Across Network Types",
+             title="SIHR Epidemic Outcomes Across Network Types",
              legend=:outertopright,
              size=(1000, 600),
              margin=8mm)
@@ -791,7 +707,7 @@ function plot_epidemic_comparison(results_dict; save_plots=true)
     # Save plot if requested
     if save_plots
         savefig(p, "figures/epidemic_comparison_SIHR.pdf")
-        println("Epidemic comparison plot saved to figures/epidemic_comparison_SIHR.pdf")
+        println("Epidemic Outcomes plot saved to figures/epidemic_comparison_SIHR.pdf")
     end
     
     return p
