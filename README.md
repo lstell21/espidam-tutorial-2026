@@ -2,39 +2,40 @@
 
 This repository contains a three-part tutorial on **network-based epidemic modelling**, built around an agent-based SIR/SIHR framework in Julia. You will progressively layer realism onto the model:
 
-| Notebook | Theme |
-|----------|-------|
-| **Part 1** | Synthetic networks (random, small-world, preferential attachment) + basic SIR |
+| Notebook         | Theme                                                                                                                                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Part 1** | Synthetic networks (random, small-world, preferential attachment) + basic SIR                                                                                                                  |
 | **Part 2** | Empirical degree distributions (configuration model, proportionate mixing) and a synthetic, community-structured contact network derived from real-world empirical data, loaded as an edgelist |
-| **Part 3** | A behavioural response (SIHR with hospitalization-driven contact restriction) and contact-rate heterogeneity (front-line workers vs general public) |
+| **Part 3** | A behavioural response (SIHR with hospitalization-driven contact restriction) and contact-rate heterogeneity (front-line workers vs general public)                                            |
 
 Each notebook writes its outputs to its own subdirectory (`figures/part1/`, `figures/part2/`, `figures/part3/`, and similarly for `data/`), so the three can be re-run independently without clobbering each other's results.
 
 ## Installation instructions
 
 1. **Visual Studio Code**
-   - Install the latest version of [Visual Studio Code](https://code.visualstudio.com/)
 
+   - Install the latest version of [Visual Studio Code](https://code.visualstudio.com/)
 2. **Julia Language**
+
    - Install the latest version of [Julia](https://julialang.org/downloads/)
    - On Windows, you can also install it through the Microsoft Store
    - Alternatively, use [JuliaUp](https://github.com/JuliaLang/juliaup) for better version management
-
 3. **VS Code Extensions**
+
    - Open VS Code and install the Julia extension
    - You can find it by searching for "Julia" in the Extensions tab
    - If the Julia extension crashes, you might have to set the path to the Julia executable manually
    - Go to Preferences → Settings → search for "Julia executable path" and paste the path to your `julia.exe`
-
 4. **Verify Installation**
+
    - Open the Julia REPL in VS Code by pressing:
      - Windows: `Alt+J, Alt+O`
      - macOS: `Ctrl+J, Ctrl+O`
      - Linux: `Ctrl+J, Ctrl+O`
    - Alternatively, use the Command Palette (F1 or Ctrl/Cmd+Shift+P) and search for "Julia: Start REPL"
    - If the REPL opens successfully, your setup is working correctly
+5. **Run the Setup**
 
-5. **Run the Tutorial**
    - Clone or download this repository
      - Open the source control tab in VS Code and click "Clone repository" (you need git installed for this)
      - Paste the link from Slack and select the path where you want to clone it
